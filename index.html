@@ -426,8 +426,8 @@
         </div>
 
         <div>
-          <label class="block text-xs font-bold text-zinc-300 mb-1">Password (min 6 characters)</label>
-          <input id="authPasswordInput" type="password" required minlength="6" placeholder="••••••••" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500" />
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Password (min 8 characters)</label>
+          <input id="authPasswordInput" type="password" required minlength="8" placeholder="••••••••" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500" />
         </div>
 
         <!-- Mandatory Legal Clickwrap Checkbox (Register Mode Only) -->
@@ -836,8 +836,8 @@
           <input id="adminLoginEmail" type="email" required placeholder="admin@diceroller.co.ke" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-sky-400" />
         </div>
         <div>
-          <label class="block text-xs font-bold text-zinc-300 mb-1">Master Password</label>
-          <input id="adminLoginPassword" type="password" required placeholder="••••••••••••" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-sky-400" />
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Master Password (min 12 characters)</label>
+          <input id="adminLoginPassword" type="password" required minlength="12" placeholder="••••••••••••" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-sky-400" />
         </div>
         <div id="adminLoginError" class="hidden p-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-300"></div>
         <button type="submit" class="w-full py-3 rounded-2xl bg-sky-500 hover:bg-sky-400 text-zinc-950 font-black text-xs sm:text-sm transition">
@@ -987,8 +987,8 @@
               <input id="adminConfigEmailInput" type="email" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white" />
             </div>
             <div>
-              <label class="block text-[11px] font-bold text-zinc-300 mb-1">New Master Password</label>
-              <input id="adminConfigPassInput" type="password" placeholder="Enter new master password" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white" />
+              <label class="block text-[11px] font-bold text-zinc-300 mb-1">New Master Password (min 12 chars)</label>
+              <input id="adminConfigPassInput" type="password" minlength="12" placeholder="Enter new master password" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white" />
             </div>
           </div>
           <button onclick="updateMasterAdminCredentials()" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-extrabold text-xs">
@@ -2319,8 +2319,8 @@
     function updateMasterAdminCredentials() {
       const newEmail = normalizeEmail(document.getElementById('adminConfigEmailInput').value);
       const newPass = document.getElementById('adminConfigPassInput').value;
-      if (!newEmail || newPass.length < 6) {
-        showToast('Enter a valid admin email and a password of at least 6 characters.', 'error');
+      if (!newEmail || newPass.length < 12) {
+        showToast('Enter a valid admin email and a master password of at least 12 characters.', 'error');
         return;
       }
       localStorage.setItem(STORAGE_KEYS.ADMIN_CREDS, JSON.stringify({
