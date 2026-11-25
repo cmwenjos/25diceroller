@@ -661,11 +661,11 @@
 
       <div class="mb-4">
         <label class="block text-xs font-bold text-zinc-300 mb-1">Total Rounds</label>
-        <div class="grid grid-cols-4 gap-2">
-          <button type="button" onclick="selectMpRounds(1)" class="mp-round-btn py-2 rounded-xl text-xs font-bold bg-zinc-950 border border-white/10 text-zinc-300" data-rounds="1">1 Round</button>
-          <button type="button" onclick="selectMpRounds(3)" class="mp-round-btn py-2 rounded-xl text-xs font-bold bg-emerald-500/20 border border-emerald-500 text-emerald-300" data-rounds="3">3 Rounds</button>
-          <button type="button" onclick="selectMpRounds(5)" class="mp-round-btn py-2 rounded-xl text-xs font-bold bg-zinc-950 border border-white/10 text-zinc-300" data-rounds="5">5 Rounds</button>
-          <button type="button" onclick="selectMpRounds(10)" class="mp-round-btn py-2 rounded-xl text-xs font-bold bg-zinc-950 border border-white/10 text-zinc-300" data-rounds="10">10 Rounds</button>
+        <div class="flex items-center gap-2">
+          <input id="mpRoundsInput" type="number" min="1" value="3" placeholder="e.g. 5" oninput="handleMpRoundsInput(this.value)" class="flex-1 px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm font-mono font-bold text-white focus:outline-none focus:border-emerald-500 disabled:opacity-40" />
+          <button type="button" id="mpUnlimitedBtn" onclick="toggleMpUnlimited()" class="px-4 py-2.5 rounded-xl text-xs font-extrabold bg-zinc-950 border border-white/10 text-zinc-300 hover:text-white transition whitespace-nowrap">
+            ∞ Unlimited
+          </button>
         </div>
       </div>
 
@@ -1690,14 +1690,30 @@
       openModal('multiplayerSetupModal');
     }
 
-    function selectMpRounds(rounds) {
-      state.mp.roundsTotal = rounds;
-      document.querySelectorAll('.mp-round-btn').forEach(btn => {
-        const isSel = parseInt(btn.dataset.rounds, 10) === rounds;
-        btn.className = isSel
-          ? 'mp-round-btn py-2 rounded-xl text-xs font-bold bg-emerald-500/20 border border-emerald-500 text-emerald-300'
-          : 'mp-round-btn py-2 rounded-xl text-xs font-bold bg-zinc-950 border border-white/10 text-zinc-300';
-      });
+    function handleMpRoundsInput(val) {
+      const parsed = parseInt(val, 10);
+      state.mp.roundsTotal = parsed && parsed >= 1 ? parsed : 1;
+      const btn = document.getElementById('mpUnlimitedBtn');
+      if (btn) {
+        btn.className = 'px-4 py-2.5 rounded-xl text-xs font-extrabold bg-zinc-950 border border-white/10 text-zinc-300 hover:text-white transition whitespace-nowrap';
+      }
+    }
+
+    function toggleMpUnlimited() {
+      const input = document.getElementById('mpRoundsInput');
+      const btn = document.getElementById('mpUnlimitedBtn');
+      const isCurrentlyUnlimited = state.mp.roundsTotal === 'unlimited';
+
+      if (isCurrentlyUnlimited) {
+        input.disabled = false;
+        const fallback = parseInt(input.value, 10) || 3;
+        state.mp.roundsTotal = fallback;
+        btn.className = 'px-4 py-2.5 rounded-xl text-xs font-extrabold bg-zinc-950 border border-white/10 text-zinc-300 hover:text-white transition whitespace-nowrap';
+      } else {
+        input.disabled = true;
+        state.mp.roundsTotal = 'unlimited';
+        btn.className = 'px-4 py-2.5 rounded-xl text-xs font-extrabold bg-emerald-500/20 border border-emerald-500 text-emerald-300 transition whitespace-nowrap';
+      }
     }
 
     function renderMultiplayerPlayerInputs() {
@@ -1759,7 +1775,9 @@
       const player = mp.players[mp.currentPlayerIdx];
       const rollsLeft = Math.max(0, mp.rollsPerTurn - mp.rollsTakenThisTurn);
 
-      document.getElementById('mpRoundInfo').textContent = `Round ${mp.currentRound} of ${mp.roundsTotal}`;
+      document.getElementById('mpRoundInfo').textContent = mp.roundsTotal === 'unlimited'
+        ? `Round ${mp.currentRound} (∞ Unlimited)`
+        : `Round ${mp.currentRound} of ${mp.roundsTotal}`;
       document.getElementById('mpRollsLeftInfo').textContent = `${rollsLeft} roll${rollsLeft === 1 ? '' : 's'} left`;
       document.getElementById('mpPlayerColorDot').style.backgroundColor = player.color;
       document.getElementById('mpActivePlayerName').textContent = `${player.name}'s Turn`;
@@ -1785,7 +1803,7 @@
         mp.currentRound += 1;
       }
 
-      if (mp.currentRound > mp.roundsTotal) {
+      if (mp.roundsTotal !== 'unlimited' && mp.currentRound > mp.roundsTotal) {
         showToast('All party rounds finished! Check the final leaderboard.', 'success');
         openMultiplayerScoreboard();
         mp.currentRound = 1;
