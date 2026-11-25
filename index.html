@@ -397,7 +397,7 @@
       <div id="authFeaturePreviewBox" class="mb-4 p-3.5 rounded-2xl bg-zinc-950 border border-emerald-500/25 text-xs text-zinc-300 space-y-1">
         <div class="font-bold text-white">What you get after signing in:</div>
         <ul class="list-disc list-inside text-zinc-400 space-y-0.5">
-          <li>Pay <strong class="text-white">10 KES</strong> once to unlock a single feature forever</li>
+          <li>Pay <strong class="text-white">10 KES</strong> for 24-hour (1-day) access to a single feature</li>
           <li>Or pay <strong class="text-emerald-400">100 KES / month</strong> to unlock all modes &amp; custom colors</li>
           <li>1 email = 1 unique secured account</li>
         </ul>
@@ -468,18 +468,18 @@
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- Plan A: 10 KES Single Feature One-Time Unlock -->
+        <!-- Plan A: 10 KES Single Feature 24-Hour Pass -->
         <div class="p-5 rounded-3xl bg-zinc-950 border border-white/10 flex flex-col justify-between">
           <div>
             <div class="flex items-center justify-between mb-2">
               <span class="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Single Feature Pass</span>
-              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-800 text-zinc-300">One-Time</span>
+              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-800 text-zinc-300">24 Hours</span>
             </div>
             <div class="flex items-baseline gap-1 my-2">
               <span class="text-3xl font-black text-white">10 KES</span>
-              <span class="text-xs text-zinc-400">/ once forever</span>
+              <span class="text-xs text-zinc-400">/ 1 day (24 hrs)</span>
             </div>
-            <p class="text-xs text-zinc-400 mb-4">Pick just ONE specific feature below and keep it unlocked permanently on your account:</p>
+            <p class="text-xs text-zinc-400 mb-4">Pick just ONE specific feature below and enjoy full access to it for 24 hours:</p>
 
             <label class="block text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Select Feature to Unlock:</label>
             <select id="singleFeatureSelect" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/15 text-xs font-bold text-white mb-4 focus:outline-none focus:border-emerald-500">
@@ -491,7 +491,7 @@
           </div>
 
           <button onclick="initiatePesapalPayment('single')" class="w-full py-3 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs sm:text-sm transition border border-white/10">
-            Pay 10 KES via Pesapal
+            Pay 10 KES (24h) via Pesapal
           </button>
         </div>
 
@@ -1208,13 +1208,36 @@
       return getDaysLeft(user) > 0;
     }
 
+    function getActiveSingleUnlocks(user) {
+      if (!user) return {};
+      const now = Date.now();
+      const active = {};
+      if (user.singleUnlocks && typeof user.singleUnlocks === 'object') {
+        Object.entries(user.singleUnlocks).forEach(([key, expIso]) => {
+          if (new Date(expIso).getTime() > now) {
+            active[key] = expIso;
+          }
+        });
+      }
+      // Backwards compatibility if legacy array exists without timestamp
+      if (Array.isArray(user.unlockedFeatures)) {
+        user.unlockedFeatures.forEach(key => {
+          if (!active[key]) {
+            active[key] = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+          }
+        });
+      }
+      return active;
+    }
+
     function canAccessFeature(featureKey) {
       if (featureKey === 'classic') return true;
       if (isMasterAdmin()) return true;
       const user = getCurrentUser();
       if (!user) return false;
       if (hasProAccess(user)) return true;
-      return Array.isArray(user.unlockedFeatures) && user.unlockedFeatures.includes(featureKey);
+      const activeSingles = getActiveSingleUnlocks(user);
+      return Boolean(activeSingles[featureKey]);
     }
 
     function updateRegisterButtonState() {
@@ -1304,7 +1327,7 @@
           passwordHash: btoa(password),
           agreedToTermsAt: new Date().toISOString(),
           proExpiresAt: null,
-          unlockedFeatures: []
+          singleUnlocks: {}
         };
         saveUsersDB(db);
         localStorage.setItem(STORAGE_KEYS.SESSION, email);
@@ -1385,7 +1408,7 @@
       const amount = planType === 'monthly' ? 100 : 10;
       const itemLabel = planType === 'monthly'
         ? 'All-Access Monthly Pro Pass (30 Days)'
-        : `One-Time Unlock: ${FEATURE_LABELS[selectedFeature]}`;
+        : `24-Hour Pass: ${FEATURE_LABELS[selectedFeature]}`;
 
       const merchantRef = 'DR-' + Date.now();
       const trackingId = 'psp-' + Math.random().toString(36).substring(2, 10) + '-v3';
@@ -1465,10 +1488,12 @@
         const baseTime = hasProAccess(record) ? new Date(record.proExpiresAt).getTime() : Date.now();
         record.proExpiresAt = new Date(baseTime + 30 * 24 * 60 * 60 * 1000).toISOString();
       } else {
-        if (!Array.isArray(record.unlockedFeatures)) record.unlockedFeatures = [];
-        if (!record.unlockedFeatures.includes(order.selectedFeature)) {
-          record.unlockedFeatures.push(order.selectedFeature);
-        }
+        if (!record.singleUnlocks || typeof record.singleUnlocks !== 'object') record.singleUnlocks = {};
+        const existingExp = record.singleUnlocks[order.selectedFeature];
+        const baseTime = (existingExp && new Date(existingExp).getTime() > Date.now())
+          ? new Date(existingExp).getTime()
+          : Date.now();
+        record.singleUnlocks[order.selectedFeature] = new Date(baseTime + 24 * 60 * 60 * 1000).toISOString();
       }
 
       db[user.email] = record;
@@ -1986,19 +2011,34 @@
       const headerPlanText = document.getElementById('headerPlanText');
       const headerUpgradeLabel = document.getElementById('headerUpgradeLabel');
 
-      if (!user || !user.proExpiresAt || isMasterAdmin()) return;
+      if (!user || isMasterAdmin()) return;
 
-      const formatted = formatLiveCountdown(user.proExpiresAt);
-      if (!formatted) {
-        // Subscription expired -> automatically revert to Free Mode
-        refreshEntitlementUI();
+      if (hasProAccess(user)) {
+        const formatted = formatLiveCountdown(user.proExpiresAt);
+        if (!formatted) {
+          refreshEntitlementUI();
+          return;
+        }
+        if (timerEl) timerEl.textContent = formatted;
+        const daysLeft = getDaysLeft(user);
+        if (headerPlanText) headerPlanText.textContent = `Unlimited • ${daysLeft}d left`;
+        if (headerUpgradeLabel) headerUpgradeLabel.textContent = `${daysLeft}d Left`;
         return;
       }
 
-      if (timerEl) timerEl.textContent = formatted;
-      const daysLeft = getDaysLeft(user);
-      if (headerPlanText) headerPlanText.textContent = `Unlimited • ${daysLeft}d left`;
-      if (headerUpgradeLabel) headerUpgradeLabel.textContent = `${daysLeft}d Left`;
+      const activeSingles = getActiveSingleUnlocks(user);
+      const expiries = Object.values(activeSingles).map(iso => new Date(iso).getTime());
+      if (expiries.length > 0) {
+        const soonestIso = new Date(Math.min(...expiries)).toISOString();
+        const formatted = formatLiveCountdown(soonestIso);
+        if (!formatted) {
+          refreshEntitlementUI();
+          return;
+        }
+        if (timerEl) timerEl.textContent = formatted;
+        const count = expiries.length;
+        if (headerPlanText) headerPlanText.textContent = count === 1 ? 'Single Mode (24h)' : `${count} Modes (24h)`;
+      }
     }
 
     function refreshEntitlementUI() {
@@ -2006,13 +2046,15 @@
       const adminActive = isMasterAdmin();
       const daysLeft = getDaysLeft(user);
       const isPro = daysLeft > 0;
+      const activeSingles = getActiveSingleUnlocks(user);
+      const singleKeys = Object.keys(activeSingles);
 
       // Manage live countdown ticker
       if (countdownIntervalId) {
         clearInterval(countdownIntervalId);
         countdownIntervalId = null;
       }
-      if (user && isPro && !adminActive) {
+      if (user && !adminActive && (isPro || singleKeys.length > 0)) {
         countdownIntervalId = setInterval(updateLiveCountdownDisplay, 1000);
       }
 
@@ -2044,10 +2086,10 @@
         headerPlanText.textContent = `Unlimited • ${daysLeft}d left`;
         headerUpgradeLabel.textContent = `${daysLeft}d Left`;
       } else {
-        const count = (user.unlockedFeatures || []).length;
+        const count = singleKeys.length;
         headerPlanDot.className = count > 0 ? 'w-2 h-2 rounded-full bg-amber-400' : 'w-2 h-2 rounded-full bg-zinc-400';
         headerPlanText.textContent = count > 0
-          ? (count === 1 ? 'Single Mode Unlocked' : `${count} Modes Unlocked`)
+          ? (count === 1 ? 'Single Mode (24h)' : `${count} Modes (24h)`)
           : 'Free Mode';
         headerUpgradeLabel.textContent = 'Upgrade';
       }
@@ -2126,16 +2168,23 @@
           countdownBox.classList.remove('hidden');
           document.getElementById('settingsCountdownTimer').textContent = formatLiveCountdown(user.proExpiresAt) || '0d 00h 00m 00s';
         } else {
-          countdownBox.classList.add('hidden');
-          const list = (user.unlockedFeatures || []).map(k => FEATURE_LABELS[k]);
-          if (list.length > 0) {
-            const label = list.length === 1 ? 'Single Mode Unlocked' : `${list.length} Modes Unlocked`;
+          if (singleKeys.length > 0) {
+            const label = singleKeys.length === 1 ? 'Single Mode Unlocked (24h)' : `${singleKeys.length} Modes Unlocked (24h)`;
+            const listDetails = singleKeys.map(k => {
+              const rem = formatLiveCountdown(activeSingles[k]) || 'Expired';
+              return `${FEATURE_LABELS[k]} (${rem} left)`;
+            });
             daysBadge.textContent = label;
             daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-amber-500/20 text-amber-300';
             document.getElementById('settingsDaysLeftText').textContent = label;
             document.getElementById('settingsDaysLeftText').className = 'font-black text-amber-300';
-            document.getElementById('settingsUnlockedList').textContent = `Unlocked permanently: ${list.join(', ')}`;
+            document.getElementById('settingsUnlockedList').textContent = `Active 24h passes: ${listDetails.join(' • ')}`;
+
+            const soonestIso = new Date(Math.min(...Object.values(activeSingles).map(iso => new Date(iso).getTime()))).toISOString();
+            countdownBox.classList.remove('hidden');
+            document.getElementById('settingsCountdownTimer').textContent = formatLiveCountdown(soonestIso) || '0d 00h 00m 00s';
           } else {
+            countdownBox.classList.add('hidden');
             daysBadge.textContent = 'Free Mode';
             daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-zinc-800 text-zinc-300';
             document.getElementById('settingsDaysLeftText').textContent = 'Free Mode';
@@ -2216,9 +2265,9 @@
         refund: {
           title: 'Digital Goods Refund & Cancellation Policy',
           body: `
-            <p><strong>1. Immediate Digital Delivery:</strong> Dice Roller provides instant digital feature unlocks (<strong>KES 10</strong> one-time single feature unlock and <strong>KES 100</strong> 30-day all-access pass). Once Pesapal confirms your transaction and unlocks your account, the digital service is deemed delivered and is <strong>non-refundable</strong>.</p>
+            <p><strong>1. Immediate Digital Delivery:</strong> Dice Roller provides instant time-limited digital feature passes (<strong>KES 10</strong> 24-hour single-feature pass and <strong>KES 100</strong> 30-day all-access pass). Once Pesapal confirms your transaction and unlocks your account, the digital service is deemed delivered and is <strong>non-refundable</strong>.</p>
             <p><strong>2. Duplicate or Failed Activation:</strong> If a network interruption causes a confirmed M-Pesa or card deduction without unlocking your feature, contact Nexastudio support within 48 hours with your Pesapal <code>OrderTrackingId</code> for immediate activation or refund verification.</p>
-            <p><strong>3. No Hidden Auto-Billing:</strong> The KES 100 monthly pass grants 30 days of access and does not automatically deduct funds from your M-Pesa wallet upon expiry.</p>
+            <p><strong>3. Automatic Expiry &amp; No Auto-Billing:</strong> Both the 24-hour single pass and the 30-day all-access pass automatically revert to Free Mode upon expiry and never auto-deduct funds from your M-Pesa wallet.</p>
           `
         },
         contact: {
@@ -2303,7 +2352,7 @@
       const payments = getPaymentsDB();
 
       const activeProCount = users.filter(u => hasProAccess(u)).length;
-      const singleUnlockCount = users.reduce((acc, u) => acc + ((u.unlockedFeatures || []).length), 0);
+      const singleUnlockCount = users.reduce((acc, u) => acc + Object.keys(getActiveSingleUnlocks(u)).length, 0);
       const completedRevenue = payments
         .filter(p => p.status === 'COMPLETED')
         .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
@@ -2334,7 +2383,8 @@
 
       tbody.innerHTML = users.map(u => {
         const days = getDaysLeft(u);
-        const singles = (u.unlockedFeatures || []).map(k => FEATURE_LABELS[k] || k).join(', ') || 'None';
+        const activeSingles = getActiveSingleUnlocks(u);
+        const singles = Object.keys(activeSingles).map(k => FEATURE_LABELS[k] || k).join(', ') || 'None';
         const consentDate = u.agreedToTermsAt ? new Date(u.agreedToTermsAt).toLocaleDateString() : 'Recorded';
         return `
           <tr>
@@ -2374,6 +2424,7 @@
       const db = getUsersDB();
       if (!db[email]) return;
       db[email].proExpiresAt = null;
+      db[email].singleUnlocks = {};
       db[email].unlockedFeatures = [];
       saveUsersDB(db);
       refreshAdminDashboard();
@@ -2443,7 +2494,12 @@
           const base = hasProAccess(user) ? new Date(user.proExpiresAt).getTime() : Date.now();
           user.proExpiresAt = new Date(base + 30 * 24 * 60 * 60 * 1000).toISOString();
         } else if (tx.selectedFeature) {
-          user.unlockedFeatures = Array.from(new Set([...(user.unlockedFeatures || []), tx.selectedFeature]));
+          if (!user.singleUnlocks || typeof user.singleUnlocks !== 'object') user.singleUnlocks = {};
+          const existingExp = user.singleUnlocks[tx.selectedFeature];
+          const base = (existingExp && new Date(existingExp).getTime() > Date.now())
+            ? new Date(existingExp).getTime()
+            : Date.now();
+          user.singleUnlocks[tx.selectedFeature] = new Date(base + 24 * 60 * 60 * 1000).toISOString();
         }
         db[tx.userEmail] = user;
         saveUsersDB(db);
