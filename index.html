@@ -729,23 +729,28 @@
             <span id="settingsUserEmail" class="font-bold text-white">user@example.com</span>
           </div>
           <div class="flex items-center justify-between text-xs">
-            <span class="text-zinc-400">Days of Usage Left:</span>
-            <span id="settingsDaysLeftText" class="font-black text-emerald-400">0 days (Free Tier)</span>
+            <span class="text-zinc-400">Plan Status:</span>
+            <span id="settingsDaysLeftText" class="font-black text-emerald-400">Free Mode</span>
+          </div>
+          <!-- Live Countdown Box (Visible for 100 KES Monthly Subscribers) -->
+          <div id="settingsCountdownBox" class="hidden p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
+            <span class="text-[11px] font-bold text-emerald-300">⏳ Time until Free Mode:</span>
+            <span id="settingsCountdownTimer" class="font-mono text-xs sm:text-sm font-black text-white">--d --h --m --s</span>
           </div>
           <div id="settingsUnlockedList" class="text-[11px] text-zinc-400 bg-zinc-900/90 p-2.5 rounded-xl border border-white/5">
             Unlocked features: Classic 1–6 (Free)
           </div>
           <div class="flex flex-wrap gap-2 pt-1">
-            <button onclick="closeModal('settingsModal'); openPricingModal();" class="flex-1 py-2.5 rounded-xl bg-emerald-500 text-zinc-950 font-extrabold text-xs">
+            <button id="settingsUpgradeBtn" onclick="closeModal('settingsModal'); openPricingModal();" class="flex-1 py-2.5 rounded-xl bg-emerald-500 text-zinc-950 font-extrabold text-xs">
               Extend / Upgrade
             </button>
-            <button id="settingsAdminConsoleBtn" onclick="closeModal('settingsModal'); openAdminConsole();" class="hidden px-4 py-2.5 rounded-xl bg-sky-500 text-zinc-950 font-extrabold text-xs">
+            <button id="settingsAdminConsoleBtn" onclick="closeModal('settingsModal'); openAdminConsole();" class="hidden flex-1 py-2.5 rounded-xl bg-sky-500 text-zinc-950 font-extrabold text-xs">
               🛡️ Admin Console
             </button>
-            <button onclick="logoutUser()" class="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs">
+            <button id="settingsLogoutBtn" onclick="handleUnifiedLogout()" class="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs">
               Log Out
             </button>
-            <button onclick="deleteUserAccount()" class="px-3 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 font-bold text-xs">
+            <button id="settingsDeleteBtn" onclick="deleteUserAccount()" class="px-3 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 font-bold text-xs">
               Delete Account
             </button>
           </div>
@@ -1280,6 +1285,79 @@
         }
       }
 
+      const db = getUsersDB();
+
+      if (mode === 'register') {
+        if (!document.getElementById('authTermsCheckbox').checked) {
+          errorBox.textContent = 'You must agree to the Terms of Service, Privacy Policy, and Refund Policy to register.';
+          errorBox.classList.remove('hidden');
+          return;
+        }
+        if (db[email]) {
+          errorBox.textContent = 'This email is already registered. Please switch to "Sign In" above.';
+          errorBox.classList.remove('hidden');
+          return;
+        }
+        db[email] = {
+          name: name || email.split('@')[0],
+          email,
+          passwordHash: btoa(password),
+          agreedToTermsAt: new Date().toISOString(),
+          proExpiresAt: null,
+          unlockedFeatures: []
+        };
+        saveUsersDB(db);
+        localStorage.setItem(STORAGE_KEYS.SESSION, email);
+        closeModal('authModal');
+        refreshEntitlementUI();
+        showToast('Account created! Choose a plan or start rolling.', 'success');
+        if (state.intendedFeature) {
+          document.getElementById('singleFeatureSelect').value = state.intendedFeature;
+          openPricingModal();
+        }
+        return;
+      }
+
+      // Standard User Login
+      const existing = db[email];
+      if (!existing || existing.passwordHash !== btoa(password)) {
+        errorBox.textContent = 'Invalid email or password. Please check your credentials.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+
+      localStorage.setItem(STORAGE_KEYS.SESSION, email);
+      closeModal('authModal');
+      refreshEntitlementUI();
+      showToast(`Welcome back, ${existing.name || existing.email}!`, 'success');
+      if (state.intendedFeature && canAccessFeature(state.intendedFeature)) {
+        activateFeatureAfterUnlock(state.intendedFeature);
+        state.intendedFeature = null;
+      }
+    }
+
+    function logoutUser() {
+      localStorage.removeItem(STORAGE_KEYS.SESSION);
+      if (state.mode !== 'classic') {
+        switchMode('classic');
+      }
+      refreshEntitlementUI();
+      closeModal('settingsModal');
+      showToast('Signed out successfully.', 'info');
+    }
+
+    function handleUnifiedLogout() {
+      if (isMasterAdmin()) {
+        logoutAdmin();
+        closeModal('settingsModal');
+      } else {
+        logoutUser();
+      }
+    }
+
+    function deleteUserAccount() {
+      const user = getCurrentUser();
+      if (!user) return;
       const db = getUsersDB();
       delete db[user.email];
       saveUsersDB(db);
@@ -1889,23 +1967,63 @@
     /*************************************************************************
      * 9. UI SYNC, MODALS, TOASTS & LEGAL COMPLIANCE CONTENT
      *************************************************************************/
+    let countdownIntervalId = null;
+
+    function formatLiveCountdown(expiresAtIso) {
+      const diffMs = new Date(expiresAtIso).getTime() - Date.now();
+      if (diffMs <= 0) return null;
+      const totalSeconds = Math.floor(diffMs / 1000);
+      const days = Math.floor(totalSeconds / 86400);
+      const hours = Math.floor((totalSeconds % 86400) / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      return `${days}d ${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+    }
+
+    function updateLiveCountdownDisplay() {
+      const user = getCurrentUser();
+      const timerEl = document.getElementById('settingsCountdownTimer');
+      const headerPlanText = document.getElementById('headerPlanText');
+      const headerUpgradeLabel = document.getElementById('headerUpgradeLabel');
+
+      if (!user || !user.proExpiresAt || isMasterAdmin()) return;
+
+      const formatted = formatLiveCountdown(user.proExpiresAt);
+      if (!formatted) {
+        // Subscription expired -> automatically revert to Free Mode
+        refreshEntitlementUI();
+        return;
+      }
+
+      if (timerEl) timerEl.textContent = formatted;
+      const daysLeft = getDaysLeft(user);
+      if (headerPlanText) headerPlanText.textContent = `Unlimited • ${daysLeft}d left`;
+      if (headerUpgradeLabel) headerUpgradeLabel.textContent = `${daysLeft}d Left`;
+    }
+
     function refreshEntitlementUI() {
       const user = getCurrentUser();
       const adminActive = isMasterAdmin();
       const daysLeft = getDaysLeft(user);
-      const isPro = daysLeft > 0 || adminActive;
+      const isPro = daysLeft > 0;
 
-      // Toggle Master Admin Header & Settings Buttons
+      // Manage live countdown ticker
+      if (countdownIntervalId) {
+        clearInterval(countdownIntervalId);
+        countdownIntervalId = null;
+      }
+      if (user && isPro && !adminActive) {
+        countdownIntervalId = setInterval(updateLiveCountdownDisplay, 1000);
+      }
+
+      // Toggle Master Admin Header Button
       const headerAdminBtn = document.getElementById('headerAdminBtn');
-      const settingsAdminBtn = document.getElementById('settingsAdminConsoleBtn');
       if (adminActive) {
         headerAdminBtn.classList.remove('hidden');
         headerAdminBtn.classList.add('flex');
-        if (settingsAdminBtn) settingsAdminBtn.classList.remove('hidden');
       } else {
         headerAdminBtn.classList.add('hidden');
         headerAdminBtn.classList.remove('flex');
-        if (settingsAdminBtn) settingsAdminBtn.classList.add('hidden');
       }
 
       // Header pills
@@ -1915,20 +2033,22 @@
 
       if (adminActive) {
         headerPlanDot.className = 'w-2 h-2 rounded-full bg-sky-400';
-        headerPlanText.textContent = 'Master Admin • All Access';
-        headerUpgradeLabel.textContent = 'All Unlocked';
+        headerPlanText.textContent = 'Admin • Unlimited';
+        headerUpgradeLabel.textContent = 'Admin Active';
       } else if (!user) {
         headerPlanDot.className = 'w-2 h-2 rounded-full bg-zinc-500';
         headerPlanText.textContent = 'Guest • Free Mode';
         headerUpgradeLabel.textContent = 'Sign In / Pro';
       } else if (isPro) {
         headerPlanDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-        headerPlanText.textContent = `Pro • ${daysLeft}d left`;
-        headerUpgradeLabel.textContent = `${daysLeft} Days Left`;
+        headerPlanText.textContent = `Unlimited • ${daysLeft}d left`;
+        headerUpgradeLabel.textContent = `${daysLeft}d Left`;
       } else {
         const count = (user.unlockedFeatures || []).length;
-        headerPlanDot.className = 'w-2 h-2 rounded-full bg-amber-400';
-        headerPlanText.textContent = count > 0 ? `${count} Mode${count > 1 ? 's' : ''} Unlocked` : user.email;
+        headerPlanDot.className = count > 0 ? 'w-2 h-2 rounded-full bg-amber-400' : 'w-2 h-2 rounded-full bg-zinc-400';
+        headerPlanText.textContent = count > 0
+          ? (count === 1 ? 'Single Mode Unlocked' : `${count} Modes Unlocked`)
+          : 'Free Mode';
         headerUpgradeLabel.textContent = 'Upgrade';
       }
 
@@ -1953,39 +2073,81 @@
       const signedInView = document.getElementById('settingsSignedInView');
       const daysBadge = document.getElementById('settingsDaysLeftBadge');
       const colorLockStatus = document.getElementById('colorLockStatus');
+      const countdownBox = document.getElementById('settingsCountdownBox');
+      const settingsUpgradeBtn = document.getElementById('settingsUpgradeBtn');
+      const settingsAdminBtn = document.getElementById('settingsAdminConsoleBtn');
+      const settingsLogoutBtn = document.getElementById('settingsLogoutBtn');
+      const settingsDeleteBtn = document.getElementById('settingsDeleteBtn');
 
       colorLockStatus.textContent = canAccessFeature('custom_colors')
         ? '✓ Unlocked'
         : '🔒 Unlock for 10 KES or Pro';
 
-      if (!user) {
+      if (adminActive) {
+        const creds = getAdminCreds();
+        signedOutView.classList.add('hidden');
+        signedInView.classList.remove('hidden');
+        countdownBox.classList.add('hidden');
+
+        daysBadge.textContent = 'Admin';
+        daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-sky-500/20 text-sky-300 border border-sky-400/30';
+        document.getElementById('settingsUserEmail').textContent = `${creds.email} (Master Admin)`;
+        document.getElementById('settingsDaysLeftText').textContent = 'Unlimited (Master Admin)';
+        document.getElementById('settingsDaysLeftText').className = 'font-black text-sky-400';
+        document.getElementById('settingsUnlockedList').textContent = 'Unlocked features: ALL MODES, Custom Colors & Backend Admin Controls';
+
+        settingsUpgradeBtn.classList.add('hidden');
+        settingsAdminBtn.classList.remove('hidden');
+        settingsLogoutBtn.textContent = 'Exit Admin';
+        settingsDeleteBtn.classList.add('hidden');
+      } else if (!user) {
         signedOutView.classList.remove('hidden');
         signedInView.classList.add('hidden');
-        daysBadge.textContent = 'Guest • Free Tier';
+        countdownBox.classList.add('hidden');
+        daysBadge.textContent = 'Guest • Free Mode';
+        daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-zinc-800 text-zinc-300';
       } else {
         signedOutView.classList.add('hidden');
         signedInView.classList.remove('hidden');
+        settingsUpgradeBtn.classList.remove('hidden');
+        settingsAdminBtn.classList.add('hidden');
+        settingsLogoutBtn.textContent = 'Log Out';
+        settingsDeleteBtn.classList.remove('hidden');
+
         document.getElementById('settingsUserEmail').textContent = user.email;
 
         if (isPro) {
-          daysBadge.textContent = `${daysLeft} Days Left`;
+          daysBadge.textContent = 'Unlimited';
           daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-500/20 text-emerald-300';
-          document.getElementById('settingsDaysLeftText').textContent = `${daysLeft} days remaining on 100 KES Monthly Pass`;
+          document.getElementById('settingsDaysLeftText').textContent = `Unlimited (${daysLeft} days left)`;
+          document.getElementById('settingsDaysLeftText').className = 'font-black text-emerald-400';
           document.getElementById('settingsUnlockedList').textContent = 'Unlocked features: ALL FEATURES (Multi-Dice, Custom Range, Multiplayer, Custom Colors)';
+
+          countdownBox.classList.remove('hidden');
+          document.getElementById('settingsCountdownTimer').textContent = formatLiveCountdown(user.proExpiresAt) || '0d 00h 00m 00s';
         } else {
+          countdownBox.classList.add('hidden');
           const list = (user.unlockedFeatures || []).map(k => FEATURE_LABELS[k]);
-          daysBadge.textContent = list.length ? `${list.length} Single Unlock` : 'Free Tier';
-          daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-zinc-800 text-zinc-300';
-          document.getElementById('settingsDaysLeftText').textContent = '0 days (Monthly Pass inactive)';
-          document.getElementById('settingsUnlockedList').textContent = list.length
-            ? `Unlocked permanently: ${list.join(', ')}`
-            : 'Unlocked features: Classic 1–6 (Free)';
+          if (list.length > 0) {
+            const label = list.length === 1 ? 'Single Mode Unlocked' : `${list.length} Modes Unlocked`;
+            daysBadge.textContent = label;
+            daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-amber-500/20 text-amber-300';
+            document.getElementById('settingsDaysLeftText').textContent = label;
+            document.getElementById('settingsDaysLeftText').className = 'font-black text-amber-300';
+            document.getElementById('settingsUnlockedList').textContent = `Unlocked permanently: ${list.join(', ')}`;
+          } else {
+            daysBadge.textContent = 'Free Mode';
+            daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-zinc-800 text-zinc-300';
+            document.getElementById('settingsDaysLeftText').textContent = 'Free Mode';
+            document.getElementById('settingsDaysLeftText').className = 'font-black text-zinc-300';
+            document.getElementById('settingsUnlockedList').textContent = 'Unlocked features: Classic 1–6 (Free Mode)';
+          }
         }
       }
     }
 
     function handleHeaderPlanClick() {
-      if (!getCurrentUser()) {
+      if (!getCurrentUser() && !isMasterAdmin()) {
         openAuthModal('login');
       } else {
         openSettingsModal();
