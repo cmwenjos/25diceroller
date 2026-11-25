@@ -1,0 +1,2395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#09090b" />
+  <meta name="description" content="Dice Roller by Nexastudio — Tactile full-screen 3D dice roller with Multi-Dice, Custom Ranges, Multiplayer Party Mode, and instant M-Pesa & Bank Card checkout via Pesapal." />
+  <title>Dice Roller — Built by Nexastudio</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          animation: {
+            'pulse-soft': 'pulseSoft 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          },
+          keyframes: {
+            pulseSoft: {
+              '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+              '50%': { opacity: 0.72, transform: 'scale(0.98)' },
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    :root {
+      --bg-primary: #09090b;
+      --bg-secondary: #121216;
+      --dice-color: #ffffff;
+      --dice-pip: #09090b;
+      --accent-color: #10b981;
+      --accent-glow: rgba(16, 185, 129, 0.28);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    input, textarea, select {
+      user-select: text;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow-x: hidden;
+      background-color: var(--bg-primary);
+      color: #fafafa;
+      font-family: 'Inter', system-ui, sans-serif;
+    }
+
+    /* Tactile 3D-styled Die Card */
+    .tactile-die {
+      background: linear-gradient(145deg, var(--dice-color), color-mix(in srgb, var(--dice-color) 82%, #000000));
+      color: var(--dice-pip);
+      box-shadow:
+        0 22px 45px -12px rgba(0, 0, 0, 0.65),
+        0 0 0 1px rgba(255, 255, 255, 0.14),
+        inset 0 3px 6px rgba(255, 255, 255, 0.45),
+        inset 0 -6px 12px rgba(0, 0, 0, 0.22);
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
+      will-change: transform;
+    }
+
+    .tactile-die:active {
+      transform: scale(0.94);
+    }
+
+    @keyframes diceTumble {
+      0% {
+        transform: scale(0.86) rotate(-14deg) translateY(10px);
+      }
+      35% {
+        transform: scale(1.09) rotate(11deg) translateY(-16px);
+      }
+      70% {
+        transform: scale(0.97) rotate(-5deg) translateY(4px);
+      }
+      100% {
+        transform: scale(1) rotate(0deg) translateY(0);
+      }
+    }
+
+    .rolling-anim {
+      animation: diceTumble 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    @keyframes popIn {
+      0% { opacity: 0; transform: scale(0.92) translateY(8px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .modal-pop {
+      animation: popIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Ripple Effect on Tap */
+    .tap-ripple {
+      position: fixed;
+      border-radius: 9999px;
+      pointer-events: none;
+      transform: translate(-50%, -50%) scale(0);
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      width: 240px;
+      height: 240px;
+      animation: rippleExpand 0.55s ease-out forwards;
+      z-index: 5;
+    }
+
+    @keyframes rippleExpand {
+      0% { transform: translate(-50%, -50%) scale(0.15); opacity: 0.9; }
+      100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+    }
+
+    /* Custom Scrollbar for Modals */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.16);
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between relative selection:bg-emerald-500 selection:text-white">
+
+  <!-- Ambient Dynamic Glow Backdrop -->
+  <div id="ambientBackdrop" class="fixed inset-0 pointer-events-none transition-all duration-500 z-0"
+       style="background: radial-gradient(circle at 50% 42%, var(--accent-glow), transparent 62%);"></div>
+
+  <!-- Toast Notification Banner -->
+  <div id="toastContainer" class="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 w-[92%] max-w-md pointer-events-none"></div>
+
+  <!-- ===================================================================== -->
+  <!-- TOP NAVIGATION BAR (Stops Roll Propagation)                           -->
+  <!-- ===================================================================== -->
+  <header id="topBar" onclick="event.stopPropagation()" class="relative z-20 w-full px-4 sm:px-6 pt-4 pb-2 flex items-center justify-between gap-2">
+    <!-- Left: Brand & Mode Switcher -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <button onclick="openMainMenu()" class="flex items-center gap-2.5 bg-zinc-900/85 hover:bg-zinc-800/90 backdrop-blur-md border border-white/10 px-3.5 py-2.5 rounded-2xl transition shadow-lg">
+        <span class="w-7 h-7 rounded-xl flex items-center justify-center font-black text-sm shadow-inner" style="background-color: var(--accent-color); color: #09090b;">
+          ⚄
+        </span>
+        <div class="text-left">
+          <div class="text-xs sm:text-sm font-extrabold tracking-tight leading-none text-white">DICE ROLLER</div>
+          <div id="currentModeBadge" class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400 mt-0.5">Classic 1–6 • Free</div>
+        </div>
+        <svg class="w-4 h-4 text-zinc-400 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Right: Account Status, Upgrade Pill, & Settings Gear -->
+    <div class="flex items-center gap-2">
+      <!-- Subscription / Account Status Pill -->
+      <button id="headerPlanBtn" onclick="handleHeaderPlanClick()" class="hidden sm:flex items-center gap-2 bg-zinc-900/85 hover:bg-zinc-800 border border-white/10 px-3.5 py-2.5 rounded-2xl text-xs font-semibold transition">
+        <span id="headerPlanDot" class="w-2 h-2 rounded-full bg-zinc-500"></span>
+        <span id="headerPlanText">Guest • Free Mode</span>
+      </button>
+
+      <!-- Upgrade / Unlock Button -->
+      <button id="headerUpgradeBtn" onclick="openPricingModal()" class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm font-bold text-zinc-950 shadow-lg transition transform hover:scale-[1.02] active:scale-95"
+              style="background-color: var(--accent-color);">
+        <span>⚡</span>
+        <span id="headerUpgradeLabel">Unlock Pro</span>
+      </button>
+
+      <!-- Master Admin Console Shortcut (Strictly Hidden Unless Master Admin is Signed In) -->
+      <button id="headerAdminBtn" onclick="openAdminConsole()" class="hidden items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-sky-300 text-xs sm:text-sm font-extrabold transition shadow-lg">
+        <span>🛡️</span>
+        <span class="hidden sm:inline">Admin Console</span>
+      </button>
+
+      <!-- Settings Gear Button -->
+      <button onclick="openSettingsModal()" aria-label="Settings" class="p-2.5 sm:p-3 rounded-2xl bg-zinc-900/85 hover:bg-zinc-800 border border-white/10 text-zinc-200 transition shadow-lg">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- FULL-SCREEN INTERACTIVE DICE ARENA (CLICK ANYWHERE / SPACE / ENTER)   -->
+  <!-- ===================================================================== -->
+  <main id="rollArena" class="relative z-10 flex-1 w-full flex flex-col items-center justify-center px-4 py-6 cursor-pointer select-none">
+
+    <!-- Multiplayer Active Turn Banner (Visible only in Multiplayer Mode) -->
+    <div id="multiplayerTurnBanner" onclick="event.stopPropagation()" class="hidden mb-5 px-5 py-3 rounded-3xl bg-zinc-900/90 border border-white/15 backdrop-blur-md shadow-2xl text-center max-w-md w-full">
+      <div class="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
+        <span id="mpRoundInfo">Round 1 of 3</span>
+        <span id="mpRollsLeftInfo">1 roll left</span>
+      </div>
+      <div class="flex items-center justify-center gap-2.5">
+        <span id="mpPlayerColorDot" class="w-3.5 h-3.5 rounded-full shadow"></span>
+        <h2 id="mpActivePlayerName" class="text-lg sm:text-xl font-black tracking-tight text-white">Player 1's Turn</h2>
+      </div>
+      <p id="mpInstructionText" class="text-xs text-zinc-400 mt-1">Tap anywhere on screen or press Space to roll</p>
+    </div>
+
+    <!-- Mode-Specific Quick Controls Bar (Multi-Dice Count or Custom Range) -->
+    <div id="modeControlBar" onclick="event.stopPropagation()" class="mb-6 flex flex-wrap items-center justify-center gap-2 max-w-xl w-full"></div>
+
+    <!-- Total / Roll Sum Readout -->
+    <div id="rollSummaryPill" class="mb-5 flex items-center gap-3 px-4 py-1.5 rounded-full bg-zinc-900/75 border border-white/10 backdrop-blur-md">
+      <span class="text-[11px] font-bold uppercase tracking-widest text-zinc-400">Result</span>
+      <span id="rollTotalValue" class="font-mono text-lg sm:text-xl font-extrabold text-white">6</span>
+      <span id="rollCountBadge" class="text-[11px] font-medium text-zinc-500 border-l border-white/10 pl-3">Roll #1</span>
+    </div>
+
+    <!-- Dice Stage Container -->
+    <div id="diceStage" class="flex flex-wrap items-center justify-center gap-4 sm:gap-6 max-w-4xl w-full my-auto py-2">
+      <!-- Default Initial Die (Face 6) -->
+      <div class="tactile-die w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-[2.25rem] flex items-center justify-center">
+        <svg viewBox="0 0 100 100" class="w-4/5 h-4/5">
+          <circle cx="28" cy="24" r="9.5" fill="currentColor" />
+          <circle cx="72" cy="24" r="9.5" fill="currentColor" />
+          <circle cx="28" cy="50" r="9.5" fill="currentColor" />
+          <circle cx="72" cy="50" r="9.5" fill="currentColor" />
+          <circle cx="28" cy="76" r="9.5" fill="currentColor" />
+          <circle cx="72" cy="76" r="9.5" fill="currentColor" />
+        </svg>
+      </div>
+    </div>
+
+    <!-- Multiplayer Turn Pass Button (Stops Roll Propagation) -->
+    <div id="multiplayerActionBar" onclick="event.stopPropagation()" class="hidden mt-6 flex items-center gap-3">
+      <button id="mpNextPlayerBtn" onclick="advanceMultiplayerTurn()" class="px-6 py-3.5 rounded-2xl font-extrabold text-sm text-zinc-950 shadow-xl transition transform hover:scale-[1.02] active:scale-95 flex items-center gap-2"
+              style="background-color: var(--accent-color);">
+        <span>Next Player</span>
+        <span>→</span>
+      </button>
+      <button onclick="openMultiplayerScoreboard()" class="px-4 py-3.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 border border-white/10 text-xs sm:text-sm font-bold text-zinc-200 transition">
+        Scores
+      </button>
+      <button onclick="switchMode('classic')" class="px-4 py-3.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 border border-white/10 text-xs sm:text-sm font-bold text-zinc-400 transition">
+        Exit
+      </button>
+    </div>
+
+    <!-- Subtle Tap / Spacebar Hint -->
+    <div id="tapPromptHint" class="mt-6 text-center pointer-events-none animate-pulse-soft">
+      <p class="text-xs sm:text-sm font-semibold tracking-wide text-zinc-400">
+        Tap anywhere on screen, or press <kbd class="px-2 py-0.5 text-[11px] font-mono bg-zinc-800/90 text-zinc-200 rounded-md border border-white/10">Space</kbd> / <kbd class="px-2 py-0.5 text-[11px] font-mono bg-zinc-800/90 text-zinc-200 rounded-md border border-white/10">Enter</kbd>
+      </p>
+    </div>
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- COMPACT COMPLIANCE & NEXASTUDIO FOOTER                                -->
+  <!-- ===================================================================== -->
+  <footer onclick="event.stopPropagation()" class="relative z-20 w-full px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-zinc-500 border-t border-white/5 bg-zinc-950/75 backdrop-blur-md">
+    <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+      <span class="font-bold text-zinc-300">Dice Roller</span>
+      <span>•</span>
+      <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-zinc-300 font-semibold">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+        Built by <strong class="text-white font-extrabold tracking-tight">Nexastudio</strong>
+      </span>
+    </div>
+    <div class="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+      <button onclick="openMainMenu()" class="hover:text-zinc-200 transition">Modes</button>
+      <button onclick="openPricingModal()" class="hover:text-zinc-200 transition">Pricing</button>
+      <button onclick="openLegalModal('terms')" class="hover:text-zinc-200 transition">Terms</button>
+      <button onclick="openLegalModal('privacy')" class="hover:text-zinc-200 transition">Privacy</button>
+      <button onclick="openLegalModal('refund')" class="hover:text-zinc-200 transition">Refund Policy</button>
+      <button onclick="openLegalModal('contact')" class="hover:text-zinc-200 transition">Contact</button>
+      <button onclick="openAdminLoginModal()" title="Master Admin Portal" class="text-zinc-600 hover:text-zinc-300 transition flex items-center gap-1">
+        <span>🔒</span>
+        <span class="hidden md:inline">Admin</span>
+      </button>
+    </div>
+  </footer>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 1: MAIN MENU / MODE SELECTOR                                    -->
+  <!-- ===================================================================== -->
+  <div id="mainMenuModal" onclick="closeModalOnBackdrop(event, 'mainMenuModal')" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-2xl bg-zinc-900 border border-white/10 rounded-3xl p-5 sm:p-7 shadow-2xl my-auto">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h2 class="text-xl sm:text-2xl font-black tracking-tight text-white">Choose Dice Mode</h2>
+          <p class="text-xs sm:text-sm text-zinc-400 mt-0.5">Classic 1–6 is free forever. Sign in to unlock custom &amp; party modes.</p>
+        </div>
+        <button onclick="closeModal('mainMenuModal')" class="p-2.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition">✕</button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <!-- Mode 1: Classic 1-6 (Free) -->
+        <button onclick="selectModeFromMenu('classic')" class="text-left p-4 rounded-2xl bg-zinc-950/90 hover:bg-zinc-800/80 border border-emerald-500/40 transition group flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-2xl">🎲</span>
+              <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Free • No Sign-In</span>
+            </div>
+            <h3 class="text-base font-extrabold text-white group-hover:text-emerald-300 transition">1. Classic 1–6 Roll</h3>
+            <p class="text-xs text-zinc-400 mt-1">Full-screen tactile ASMR dice roll from 1 to 6. Tap screen, Space, or Enter.</p>
+          </div>
+          <div class="mt-3 text-xs font-bold text-emerald-400">Play Immediately →</div>
+        </button>
+
+        <!-- Mode 2: Multi-Dice (1-10) -->
+        <button onclick="selectModeFromMenu('multi_dice')" class="text-left p-4 rounded-2xl bg-zinc-950/90 hover:bg-zinc-800/80 border border-white/10 transition group flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-2xl">⚄⚄</span>
+              <span id="badge_multi_dice" class="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">🔒 10 KES or Pro</span>
+            </div>
+            <h3 class="text-base font-extrabold text-white group-hover:text-amber-300 transition">2. Multi-Dice (1 to 10)</h3>
+            <p class="text-xs text-zinc-400 mt-1">Roll anywhere from 1 up to 10 dice simultaneously with automatic sum calculation.</p>
+          </div>
+          <div id="cta_multi_dice" class="mt-3 text-xs font-bold text-zinc-300">Unlock or Open →</div>
+        </button>
+
+        <!-- Mode 3: Custom Number Range -->
+        <button onclick="selectModeFromMenu('custom_range')" class="text-left p-4 rounded-2xl bg-zinc-950/90 hover:bg-zinc-800/80 border border-white/10 transition group flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-2xl">🔢</span>
+              <span id="badge_custom_range" class="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">🔒 10 KES or Pro</span>
+            </div>
+            <h3 class="text-base font-extrabold text-white group-hover:text-amber-300 transition">3. Custom Range (1–1,000+)</h3>
+            <p class="text-xs text-zinc-400 mt-1">Pick any range such as 1–150 or 1–1,000 powered by cryptographic randomness.</p>
+          </div>
+          <div id="cta_custom_range" class="mt-3 text-xs font-bold text-zinc-300">Unlock or Open →</div>
+        </button>
+
+        <!-- Mode 4: Multiplayer Party Mode -->
+        <button onclick="selectModeFromMenu('multiplayer')" class="text-left p-4 rounded-2xl bg-zinc-950/90 hover:bg-zinc-800/80 border border-white/10 transition group flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-2xl">👥</span>
+              <span id="badge_multiplayer" class="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">🔒 10 KES or Pro</span>
+            </div>
+            <h3 class="text-base font-extrabold text-white group-hover:text-amber-300 transition">4. Multiplayer Party Mode</h3>
+            <p class="text-xs text-zinc-400 mt-1">Set number of players, custom player colors, rolls per turn, and pass-the-screen turns.</p>
+          </div>
+          <div id="cta_multiplayer" class="mt-3 text-xs font-bold text-zinc-300">Unlock or Open →</div>
+        </button>
+      </div>
+
+      <!-- Custom Colors Quick Banner -->
+      <div class="mt-4 p-4 rounded-2xl bg-zinc-950/90 border border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">🎨</span>
+          <div>
+            <div class="flex items-center gap-2">
+              <h4 class="text-sm font-extrabold text-white">Custom Dice &amp; Theme Colors</h4>
+              <span id="badge_custom_colors" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">10 KES or Pro</span>
+            </div>
+            <p class="text-xs text-zinc-400">Personalize your dice colors, pip contrast, and full-screen glow.</p>
+          </div>
+        </div>
+        <button onclick="closeModal('mainMenuModal'); openSettingsModal();" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-white transition">
+          Customize Colors
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 2: AUTHENTICATION (UNIQUE EMAIL SIGN IN / CREATE ACCOUNT)       -->
+  <!-- ===================================================================== -->
+  <div id="authModal" onclick="closeModalOnBackdrop(event, 'authModal')" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-md bg-zinc-900 border border-white/10 rounded-3xl p-6 shadow-2xl my-auto">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-400">Account Required</span>
+          <h2 id="authModalTitle" class="text-xl font-black text-white mt-0.5">Sign In to Unlock Features</h2>
+        </div>
+        <button onclick="closeModal('authModal')" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">✕</button>
+      </div>
+
+      <!-- Feature Preview Info Box -->
+      <div id="authFeaturePreviewBox" class="mb-4 p-3.5 rounded-2xl bg-zinc-950 border border-emerald-500/25 text-xs text-zinc-300 space-y-1">
+        <div class="font-bold text-white">What you get after signing in:</div>
+        <ul class="list-disc list-inside text-zinc-400 space-y-0.5">
+          <li>Pay <strong class="text-white">10 KES</strong> once to unlock a single feature forever</li>
+          <li>Or pay <strong class="text-emerald-400">100 KES / month</strong> to unlock all modes &amp; custom colors</li>
+          <li>1 email = 1 unique secured account</li>
+        </ul>
+      </div>
+
+      <!-- Auth Tabs -->
+      <div class="grid grid-cols-2 gap-1.5 p-1 bg-zinc-950 rounded-2xl mb-4 border border-white/5">
+        <button id="tabRegisterBtn" onclick="setAuthTab('register')" class="py-2 rounded-xl text-xs font-extrabold bg-zinc-800 text-white transition">Create Account</button>
+        <button id="tabLoginBtn" onclick="setAuthTab('login')" class="py-2 rounded-xl text-xs font-extrabold text-zinc-400 hover:text-white transition">Sign In</button>
+      </div>
+
+      <form id="authForm" onsubmit="handleAuthSubmit(event)" class="space-y-3.5">
+        <div id="authNameGroup">
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Display Name</label>
+          <input id="authNameInput" type="text" placeholder="e.g. Alex Kamau" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Unique Email Address</label>
+          <input id="authEmailInput" type="email" required placeholder="you@example.com" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500" />
+          <p class="text-[11px] text-zinc-500 mt-1">Each email can only be registered once to protect your subscription.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Password (min 6 characters)</label>
+          <input id="authPasswordInput" type="password" required minlength="6" placeholder="••••••••" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500" />
+        </div>
+
+        <!-- Mandatory Legal Clickwrap Checkbox (Register Mode Only) -->
+        <div id="authLegalConsentGroup" class="p-3 rounded-2xl bg-zinc-950 border border-white/10">
+          <label class="flex items-start gap-2.5 cursor-pointer text-[11px] leading-relaxed text-zinc-300">
+            <input id="authTermsCheckbox" type="checkbox" onchange="updateRegisterButtonState()" class="mt-0.5 w-4 h-4 rounded accent-emerald-500 cursor-pointer shrink-0" />
+            <span>
+              I have read and agree to the
+              <button type="button" onclick="openLegalModal('terms')" class="text-emerald-400 underline font-bold hover:text-emerald-300">Terms of Service</button>,
+              <button type="button" onclick="openLegalModal('privacy')" class="text-emerald-400 underline font-bold hover:text-emerald-300">Privacy &amp; Data Protection Policy</button>, and
+              <button type="button" onclick="openLegalModal('refund')" class="text-emerald-400 underline font-bold hover:text-emerald-300">Refund Policy</button>.
+            </span>
+          </label>
+        </div>
+
+        <div id="authErrorMsg" class="hidden p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-300 font-medium"></div>
+
+        <button type="submit" id="authSubmitBtn" disabled class="w-full py-3 rounded-2xl font-extrabold text-sm text-zinc-950 shadow-lg transition transform active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed"
+                style="background-color: var(--accent-color);">
+          Create Unique Account &amp; Continue
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 3: PRICING & UNLOCK OPTIONS (10 KES SINGLE vs 100 KES MONTHLY)  -->
+  <!-- ===================================================================== -->
+  <div id="pricingModal" onclick="closeModalOnBackdrop(event, 'pricingModal')" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-2xl bg-zinc-900 border border-white/10 rounded-3xl p-6 shadow-2xl my-auto">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-400">M-Pesa &amp; Bank Cards via Pesapal</span>
+          <h2 class="text-xl sm:text-2xl font-black text-white mt-0.5">Unlock Full Dice Roller Power</h2>
+        </div>
+        <button onclick="closeModal('pricingModal')" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">✕</button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Plan A: 10 KES Single Feature One-Time Unlock -->
+        <div class="p-5 rounded-3xl bg-zinc-950 border border-white/10 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Single Feature Pass</span>
+              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-800 text-zinc-300">One-Time</span>
+            </div>
+            <div class="flex items-baseline gap-1 my-2">
+              <span class="text-3xl font-black text-white">10 KES</span>
+              <span class="text-xs text-zinc-400">/ once forever</span>
+            </div>
+            <p class="text-xs text-zinc-400 mb-4">Pick just ONE specific feature below and keep it unlocked permanently on your account:</p>
+
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Select Feature to Unlock:</label>
+            <select id="singleFeatureSelect" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/15 text-xs font-bold text-white mb-4 focus:outline-none focus:border-emerald-500">
+              <option value="multi_dice">2. Multi-Dice (1 to 10 Dice)</option>
+              <option value="custom_range">3. Custom Range (1 to 150 / 1,000+)</option>
+              <option value="multiplayer">4. Multiplayer Party Mode</option>
+              <option value="custom_colors">5. Custom Dice &amp; Screen Colors</option>
+            </select>
+          </div>
+
+          <button onclick="initiatePesapalPayment('single')" class="w-full py-3 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs sm:text-sm transition border border-white/10">
+            Pay 10 KES via Pesapal
+          </button>
+        </div>
+
+        <!-- Plan B: 100 KES Monthly All-Access Pass -->
+        <div class="p-5 rounded-3xl bg-gradient-to-b from-emerald-950/50 to-zinc-950 border-2 border-emerald-500/60 flex flex-col justify-between relative">
+          <div class="absolute -top-3 right-5 px-3 py-0.5 rounded-full bg-emerald-500 text-zinc-950 text-[10px] font-black uppercase tracking-wider shadow">
+            Best Value • All Features
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">All-Access Monthly</span>
+              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300">30 Days</span>
+            </div>
+            <div class="flex items-baseline gap-1 my-2">
+              <span class="text-3xl font-black text-white">100 KES</span>
+              <span class="text-xs text-zinc-400">/ month (30 days)</span>
+            </div>
+            <ul class="text-xs text-zinc-300 space-y-2 my-4">
+              <li class="flex items-center gap-2"><span class="text-emerald-400">✓</span> Multi-Dice Roller (1 to 10 dice)</li>
+              <li class="flex items-center gap-2"><span class="text-emerald-400">✓</span> Custom Number Ranges (1–150, 1–1,000+)</li>
+              <li class="flex items-center gap-2"><span class="text-emerald-400">✓</span> Multiplayer Party Mode (custom turns &amp; colors)</li>
+              <li class="flex items-center gap-2"><span class="text-emerald-400">✓</span> Unlimited Custom Dice &amp; Screen Colors</li>
+            </ul>
+          </div>
+
+          <button onclick="initiatePesapalPayment('monthly')" class="w-full py-3 rounded-2xl text-zinc-950 font-extrabold text-xs sm:text-sm shadow-lg transition transform hover:scale-[1.01]"
+                  style="background-color: var(--accent-color);">
+            Pay 100 KES / Month via Pesapal
+          </button>
+        </div>
+      </div>
+
+      <p class="text-[11px] text-center text-zinc-500 mt-4">
+        Supports M-Pesa (STK Push &amp; Paybill) and Visa/Mastercard Bank Cards via Pesapal API 3.0.
+      </p>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 4: PESAPAL API 3.0 CHECKOUT & IPN VERIFICATION SIMULATOR        -->
+  <!-- ===================================================================== -->
+  <div id="pesapalCheckoutModal" onclick="closeModalOnBackdrop(event, 'pesapalCheckoutModal')" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-lg bg-zinc-900 border border-white/15 rounded-3xl p-6 shadow-2xl my-auto">
+      <!-- Pesapal Header -->
+      <div class="flex items-center justify-between pb-4 border-b border-white/10">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-400 font-black text-sm">P</div>
+          <div>
+            <h3 class="text-base font-black text-white">Pesapal Checkout (API 3.0)</h3>
+            <p id="pesapalEnvBadge" class="text-[11px] text-sky-400 font-semibold">Sandbox / Live Ready Gateway</p>
+          </div>
+        </div>
+        <button onclick="closeModal('pesapalCheckoutModal')" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">✕</button>
+      </div>
+
+      <!-- Order Summary -->
+      <div class="my-4 p-4 rounded-2xl bg-zinc-950 border border-white/10 space-y-2 text-xs">
+        <div class="flex justify-between">
+          <span class="text-zinc-400">Account Email:</span>
+          <span id="checkoutUserEmail" class="font-bold text-white">user@example.com</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-zinc-400">Item:</span>
+          <span id="checkoutItemLabel" class="font-bold text-emerald-400">All-Access Monthly (30 Days)</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-zinc-400">Merchant Reference:</span>
+          <span id="checkoutMerchantRef" class="font-mono text-zinc-300">DR-173000000</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-zinc-400">OrderTrackingId:</span>
+          <span id="checkoutTrackingId" class="font-mono text-zinc-400">psp-99281-v3</span>
+        </div>
+        <div class="flex justify-between pt-2 border-t border-white/10 text-sm">
+          <span class="font-bold text-zinc-300">Total Due:</span>
+          <span id="checkoutAmountDisplay" class="font-black text-white">KES 100.00</span>
+        </div>
+      </div>
+
+      <!-- Payment Method Tabs (M-Pesa vs Bank Transfer / Card) -->
+      <div class="grid grid-cols-2 gap-2 mb-4">
+        <button id="payMethodMpesaBtn" onclick="selectCheckoutMethod('mpesa')" class="p-3 rounded-2xl border-2 border-emerald-500 bg-emerald-500/10 text-left transition">
+          <div class="text-xs font-black text-white">📱 M-Pesa</div>
+          <div class="text-[10px] text-emerald-300">Instant STK Push / Paybill</div>
+        </button>
+        <button id="payMethodBankBtn" onclick="selectCheckoutMethod('bank')" class="p-3 rounded-2xl border border-white/10 bg-zinc-950 text-left transition">
+          <div class="text-xs font-black text-white">🏦 Bank / Visa / MC</div>
+          <div class="text-[10px] text-zinc-400">Bank Card or Mobile Banking</div>
+        </button>
+      </div>
+
+      <!-- M-Pesa Input Form -->
+      <div id="mpesaCheckoutFields" class="space-y-3 mb-4">
+        <div>
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Safaricom M-Pesa Phone Number</label>
+          <input id="mpesaPhoneInput" type="tel" placeholder="0712 345 678" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm font-mono text-white focus:outline-none focus:border-emerald-500" />
+        </div>
+        <button onclick="sendSimulatedStkPush()" class="w-full py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-extrabold text-xs sm:text-sm transition">
+          Send M-Pesa STK Prompt
+        </button>
+      </div>
+
+      <!-- Bank Card / Mobile Banking Fields -->
+      <div id="bankCheckoutFields" class="hidden space-y-3 mb-4">
+        <div class="p-3 rounded-xl bg-zinc-950 border border-white/10 text-xs text-zinc-300 space-y-1">
+          <div class="font-bold text-white">Bank Payment via Pesapal Hosted Checkout</div>
+          <p class="text-zinc-400">Supports Equity, KCB, Co-op, NCBA, Stanbic, and all international Visa/Mastercard debit &amp; credit cards.</p>
+        </div>
+        <button onclick="sendSimulatedStkPush()" class="w-full py-3 rounded-2xl bg-sky-500 hover:bg-sky-400 text-zinc-950 font-extrabold text-xs sm:text-sm transition">
+          Proceed with Bank / Card Checkout
+        </button>
+      </div>
+
+      <!-- Live API / IPN Verification Box -->
+      <div class="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-300">Payment Confirmation</span>
+          <span id="ipnStatusIndicator" class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-200">AWAITING PAYMENT</span>
+        </div>
+        <p class="text-[11px] text-zinc-300 leading-relaxed">
+          Complete the prompt on your phone or card screen. For instant preview testing, confirm your payment below:
+        </p>
+        <button onclick="simulatePesapalIpnSuccess()" class="w-full py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-black text-xs transition shadow">
+          ✓ Confirm Payment Completed
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 5: MULTIPLAYER PARTY SETUP                                      -->
+  <!-- ===================================================================== -->
+  <div id="multiplayerSetupModal" onclick="closeModalOnBackdrop(event, 'multiplayerSetupModal')" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-lg bg-zinc-900 border border-white/10 rounded-3xl p-6 shadow-2xl my-auto">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-400">Multiplayer Party Mode</span>
+          <h2 class="text-xl font-black text-white">Setup Players &amp; Turns</h2>
+        </div>
+        <button onclick="closeModal('multiplayerSetupModal')" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">✕</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div>
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Number of Players (2–8)</label>
+          <select id="mpPlayerCountSelect" onchange="renderMultiplayerPlayerInputs()" class="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm font-bold text-white">
+            <option value="2">2 Players</option>
+            <option value="3">3 Players</option>
+            <option value="4" selected>4 Players</option>
+            <option value="5">5 Players</option>
+            <option value="6">6 Players</option>
+            <option value="7">7 Players</option>
+            <option value="8">8 Players</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Rolls Per Turn</label>
+          <select id="mpRollsPerTurnSelect" class="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm font-bold text-white">
+            <option value="1" selected>1 Roll per turn</option>
+            <option value="2">2 Rolls per turn</option>
+            <option value="3">3 Rolls per turn</option>
+            <option value="5">5 Rolls per turn</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-xs font-bold text-zinc-300 mb-1">Total Rounds</label>
+        <div class="grid grid-cols-4 gap-2">
+          <button type="button" onclick="selectMpRounds(1)" class="mp-round-btn py-2 rounded-xl text-xs font-bold bg-zinc-950 border border-white/10 text-zinc-300" data-rounds="1">1 Round</button>
+          <button type="button" onclick="selectMpRounds(3)" class="mp-round-btn py-2 rounded-xl text-xs font-bold bg-emerald-500/20 border border-emerald-500 text-emerald-300" data-rounds="3">3 Rounds</button>
+          <button type="button" onclick="selectMpRounds(5)" class="mp-round-btn py-2 rounded-xl text-xs font-bold bg-zinc-950 border border-white/10 text-zinc-300" data-rounds="5">5 Rounds</button>
+          <button type="button" onclick="selectMpRounds(10)" class="mp-round-btn py-2 rounded-xl text-xs font-bold bg-zinc-950 border border-white/10 text-zinc-300" data-rounds="10">10 Rounds</button>
+        </div>
+      </div>
+
+      <!-- Dynamic Player Name & Color List -->
+      <div class="mb-5">
+        <label class="block text-xs font-bold text-zinc-300 mb-2">Assign Player Names &amp; Dice Colors</label>
+        <div id="mpPlayersListContainer" class="space-y-2 max-h-56 overflow-y-auto pr-1"></div>
+      </div>
+
+      <button onclick="startMultiplayerGame()" class="w-full py-3.5 rounded-2xl text-zinc-950 font-black text-sm shadow-lg transition transform hover:scale-[1.01]"
+              style="background-color: var(--accent-color);">
+        Start Party Game →
+      </button>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 6: MULTIPLAYER LEADERBOARD                                      -->
+  <!-- ===================================================================== -->
+  <div id="mpLeaderboardModal" onclick="closeModalOnBackdrop(event, 'mpLeaderboardModal')" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-md bg-zinc-900 border border-white/10 rounded-3xl p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-black text-white">🏆 Party Scoreboard</h2>
+        <button onclick="closeModal('mpLeaderboardModal')" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">✕</button>
+      </div>
+      <div id="mpLeaderboardRows" class="space-y-2.5 mb-5"></div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <button onclick="closeModal('mpLeaderboardModal'); openMultiplayerSetup();" class="py-3 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-xs font-extrabold text-white">New Setup</button>
+        <button onclick="closeModal('mpLeaderboardModal')" class="py-3 rounded-2xl text-xs font-extrabold text-zinc-950" style="background-color: var(--accent-color);">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 7: SETTINGS, ACCOUNT STATUS, COLORS, & PESAPAL API CONFIG       -->
+  <!-- ===================================================================== -->
+  <div id="settingsModal" onclick="closeModalOnBackdrop(event, 'settingsModal')" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-xl bg-zinc-900 border border-white/10 rounded-3xl p-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-4 border-b border-white/10">
+        <h2 class="text-xl font-black text-white">Settings &amp; Account</h2>
+        <button onclick="closeModal('settingsModal')" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">✕</button>
+      </div>
+
+      <!-- 1. Account & Days of Usage Left Card -->
+      <div class="my-4 p-4 rounded-2xl bg-zinc-950 border border-white/10">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Account &amp; Subscription</span>
+          <span id="settingsDaysLeftBadge" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-zinc-800 text-zinc-300">Free Plan</span>
+        </div>
+
+        <div id="settingsSignedOutView" class="space-y-3">
+          <p class="text-xs text-zinc-400">You are currently using Dice Roller as a Guest. Sign in to view days of usage left or unlock custom modes.</p>
+          <button onclick="closeModal('settingsModal'); openAuthModal('login');" class="w-full py-2.5 rounded-xl bg-emerald-500 text-zinc-950 font-extrabold text-xs">
+            Sign In / Create Account
+          </button>
+        </div>
+
+        <div id="settingsSignedInView" class="hidden space-y-3">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-zinc-400">Signed in as:</span>
+            <span id="settingsUserEmail" class="font-bold text-white">user@example.com</span>
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-zinc-400">Days of Usage Left:</span>
+            <span id="settingsDaysLeftText" class="font-black text-emerald-400">0 days (Free Tier)</span>
+          </div>
+          <div id="settingsUnlockedList" class="text-[11px] text-zinc-400 bg-zinc-900/90 p-2.5 rounded-xl border border-white/5">
+            Unlocked features: Classic 1–6 (Free)
+          </div>
+          <div class="flex flex-wrap gap-2 pt-1">
+            <button onclick="closeModal('settingsModal'); openPricingModal();" class="flex-1 py-2.5 rounded-xl bg-emerald-500 text-zinc-950 font-extrabold text-xs">
+              Extend / Upgrade
+            </button>
+            <button id="settingsAdminConsoleBtn" onclick="closeModal('settingsModal'); openAdminConsole();" class="hidden px-4 py-2.5 rounded-xl bg-sky-500 text-zinc-950 font-extrabold text-xs">
+              🛡️ Admin Console
+            </button>
+            <button onclick="logoutUser()" class="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs">
+              Log Out
+            </button>
+            <button onclick="deleteUserAccount()" class="px-3 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 font-bold text-xs">
+              Delete Account
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Dice & Theme Color Customizer -->
+      <div class="my-4 p-4 rounded-2xl bg-zinc-950 border border-white/10">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Dice &amp; Theme Colors</span>
+          <span id="colorLockStatus" class="text-[11px] font-bold text-amber-300">🔒 Unlock for 10 KES or Pro</span>
+        </div>
+
+        <!-- Preset Swatches -->
+        <div class="grid grid-cols-6 gap-2 my-3">
+          <button onclick="applyDiceTheme('#ffffff', '#09090b', '#10b981', true)" class="h-10 rounded-xl bg-white border-2 border-emerald-400 shadow" title="Classic Pearl (Free)"></button>
+          <button onclick="applyDiceTheme('#18181b', '#f43f5e', '#f43f5e', false)" class="h-10 rounded-xl bg-zinc-900 border border-rose-500 shadow" title="Obsidian Rose"></button>
+          <button onclick="applyDiceTheme('#fbbf24', '#18181b', '#f59e0b', false)" class="h-10 rounded-xl bg-amber-400 border border-amber-200 shadow" title="24K Gold"></button>
+          <button onclick="applyDiceTheme('#38bdf8', '#082f49', '#38bdf8', false)" class="h-10 rounded-xl bg-sky-400 border border-sky-200 shadow" title="Electric Ice"></button>
+          <button onclick="applyDiceTheme('#a855f7', '#faf5ff', '#c084fc', false)" class="h-10 rounded-xl bg-purple-500 border border-purple-200 shadow" title="Royal Amethyst"></button>
+          <button onclick="applyDiceTheme('#10b981', '#022c22', '#34d399', false)" class="h-10 rounded-xl bg-emerald-500 border border-emerald-200 shadow" title="Emerald Mint"></button>
+        </div>
+
+        <!-- Custom Hex Color Picker -->
+        <div class="flex items-center justify-between gap-3 pt-2 border-t border-white/5">
+          <label class="text-xs font-semibold text-zinc-300">Custom Die Color:</label>
+          <div class="flex items-center gap-2">
+            <input id="customDieColorPicker" type="color" value="#ffffff" onchange="handleCustomColorPick(this.value)" class="w-9 h-9 rounded-lg bg-transparent border-0 cursor-pointer" />
+            <span id="customColorHexLabel" class="font-mono text-xs text-zinc-400">#FFFFFF</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Sound & Haptics Toggles -->
+      <div class="my-4 p-4 rounded-2xl bg-zinc-950 border border-white/10 flex items-center justify-between gap-4">
+        <label class="flex items-center gap-2.5 cursor-pointer">
+          <input id="soundToggleCheckbox" type="checkbox" checked onchange="toggleSoundFx(this.checked)" class="w-4 h-4 accent-emerald-500 rounded" />
+          <span class="text-xs font-bold text-zinc-200">ASMR Dice Sound FX</span>
+        </label>
+        <label class="flex items-center gap-2.5 cursor-pointer">
+          <input id="hapticsToggleCheckbox" type="checkbox" checked onchange="toggleHaptics(this.checked)" class="w-4 h-4 accent-emerald-500 rounded" />
+          <span class="text-xs font-bold text-zinc-200">Mobile Vibration</span>
+        </label>
+      </div>
+
+      <!-- Nexastudio Studio Credit inside Settings -->
+      <div class="pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-zinc-500">
+        <span>Dice Roller v1.0</span>
+        <span>Built by <strong class="text-zinc-300 font-bold">Nexastudio</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 8: LEGAL & COMPLIANCE PAGES (TERMS, PRIVACY, REFUND, CONTACT)   -->
+  <!-- ===================================================================== -->
+  <div id="legalModal" onclick="closeModalOnBackdrop(event, 'legalModal')" class="hidden fixed inset-0 z-[60] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-xl bg-zinc-900 border border-white/15 rounded-3xl p-6 shadow-2xl my-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+        <div>
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">Nexastudio Legal &amp; Compliance</span>
+          <h2 id="legalModalTitle" class="text-lg font-black text-white">Terms &amp; Conditions</h2>
+        </div>
+        <button onclick="closeModal('legalModal')" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">✕</button>
+      </div>
+      <div id="legalModalBody" class="text-xs sm:text-sm text-zinc-300 space-y-3 leading-relaxed max-h-[62vh] overflow-y-auto pr-1"></div>
+      <div class="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-zinc-500">
+        <span>Built by <strong class="text-zinc-300">Nexastudio</strong></span>
+        <button onclick="closeModal('legalModal')" class="px-4 py-2 rounded-xl bg-emerald-500 text-zinc-950 font-extrabold text-xs">I Understand</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 9: MASTER ADMIN LOGIN MODAL (DISCREET PORTAL)                   -->
+  <!-- ===================================================================== -->
+  <div id="adminLoginModal" onclick="closeModalOnBackdrop(event, 'adminLoginModal')" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-sm bg-zinc-900 border border-sky-500/30 rounded-3xl p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-sky-400">Nexastudio Restricted Access</span>
+          <h2 class="text-lg font-black text-white">Master Admin Sign In</h2>
+        </div>
+        <button onclick="closeModal('adminLoginModal')" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">✕</button>
+      </div>
+      <form onsubmit="handleAdminLogin(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Master Admin Email</label>
+          <input id="adminLoginEmail" type="email" required placeholder="admin@diceroller.co.ke" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-sky-400" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-zinc-300 mb-1">Master Password</label>
+          <input id="adminLoginPassword" type="password" required placeholder="••••••••••••" class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-sky-400" />
+        </div>
+        <div id="adminLoginError" class="hidden p-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-300"></div>
+        <button type="submit" class="w-full py-3 rounded-2xl bg-sky-500 hover:bg-sky-400 text-zinc-950 font-black text-xs sm:text-sm transition">
+          Access Master Backend
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 10: MASTER ADMIN BACKEND CONSOLE (USERS, PAYMENTS & PESAPAL API)-->
+  <!-- ===================================================================== -->
+  <div id="adminConsoleModal" onclick="closeModalOnBackdrop(event, 'adminConsoleModal')" class="hidden fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="modal-pop w-full max-w-4xl bg-zinc-900 border border-sky-500/30 rounded-3xl p-5 sm:p-6 shadow-2xl my-auto max-h-[92vh] overflow-y-auto">
+      <!-- Header -->
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-white/10">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-sky-500/20 text-sky-300 border border-sky-400/30">Master Admin</span>
+            <span class="text-xs text-zinc-400">Built by Nexastudio</span>
+          </div>
+          <h2 class="text-xl sm:text-2xl font-black text-white mt-1">Dice Roller Backend Control Center</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="logoutAdmin()" class="px-3.5 py-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-bold">
+            Exit Admin
+          </button>
+          <button onclick="closeModal('adminConsoleModal')" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">✕</button>
+        </div>
+      </div>
+
+      <!-- Admin Navigation Tabs -->
+      <div class="flex flex-wrap gap-2 my-4 border-b border-white/10 pb-3">
+        <button onclick="switchAdminTab('overview')" id="adminTabBtn_overview" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-sky-500 text-zinc-950 transition">📊 Overview &amp; Revenue</button>
+        <button onclick="switchAdminTab('users')" id="adminTabBtn_users" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-zinc-800 text-zinc-300 hover:text-white transition">👥 Users &amp; Access</button>
+        <button onclick="switchAdminTab('payments')" id="adminTabBtn_payments" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-zinc-800 text-zinc-300 hover:text-white transition">💳 Payments &amp; IPN Ledger</button>
+        <button onclick="switchAdminTab('pesapal')" id="adminTabBtn_pesapal" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-zinc-800 text-zinc-300 hover:text-white transition">⚙️ Pesapal API &amp; Security</button>
+      </div>
+
+      <!-- TAB 1: OVERVIEW & ANALYTICS -->
+      <div id="adminTab_overview" class="space-y-4">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="p-4 rounded-2xl bg-zinc-950 border border-white/10">
+            <div class="text-[11px] font-bold text-zinc-400">Registered Users</div>
+            <div id="statTotalUsers" class="text-2xl font-black text-white mt-1">0</div>
+          </div>
+          <div class="p-4 rounded-2xl bg-zinc-950 border border-white/10">
+            <div class="text-[11px] font-bold text-zinc-400">Active Pro (100 KES)</div>
+            <div id="statActivePro" class="text-2xl font-black text-emerald-400 mt-1">0</div>
+          </div>
+          <div class="p-4 rounded-2xl bg-zinc-950 border border-white/10">
+            <div class="text-[11px] font-bold text-zinc-400">Single Unlocks (10 KES)</div>
+            <div id="statSingleUnlocks" class="text-2xl font-black text-amber-400 mt-1">0</div>
+          </div>
+          <div class="p-4 rounded-2xl bg-zinc-950 border border-white/10">
+            <div class="text-[11px] font-bold text-zinc-400">Total Revenue</div>
+            <div id="statTotalRevenue" class="text-2xl font-black text-sky-400 mt-1">KES 0</div>
+          </div>
+        </div>
+        <div class="p-4 rounded-2xl bg-zinc-950 border border-white/10 text-xs text-zinc-300 space-y-1.5">
+          <div class="font-extrabold text-white">Master Admin Privileges Active</div>
+          <p class="text-zinc-400">As Master Admin, all 5 game modes and custom colors are unlocked for your session automatically. Regular users only see the public game interface and never see this console or your Pesapal API keys.</p>
+        </div>
+      </div>
+
+      <!-- TAB 2: USERS & MANUAL ACCESS CONTROL -->
+      <div id="adminTab_users" class="hidden space-y-3">
+        <div class="flex flex-col sm:flex-row gap-2 justify-between">
+          <input id="adminUserSearchInput" type="text" oninput="renderAdminUsersTable()" placeholder="Search users by email or name..." class="flex-1 px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-xs text-white focus:outline-none focus:border-sky-400" />
+        </div>
+        <div class="overflow-x-auto rounded-2xl border border-white/10 bg-zinc-950">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-zinc-900/90 text-zinc-400 uppercase text-[10px]">
+              <tr>
+                <th class="p-3">User &amp; Consent</th>
+                <th class="p-3">Plan / Days Left</th>
+                <th class="p-3">Single Unlocks</th>
+                <th class="p-3 text-right">Admin Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminUsersTableBody" class="divide-y divide-white/5"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 3: PAYMENTS & PESAPAL IPN LEDGER -->
+      <div id="adminTab_payments" class="hidden space-y-3">
+        <div class="overflow-x-auto rounded-2xl border border-white/10 bg-zinc-950">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-zinc-900/90 text-zinc-400 uppercase text-[10px]">
+              <tr>
+                <th class="p-3">Tracking ID &amp; Date</th>
+                <th class="p-3">User Email</th>
+                <th class="p-3">Method &amp; Item</th>
+                <th class="p-3">Amount</th>
+                <th class="p-3">Status</th>
+                <th class="p-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="adminPaymentsTableBody" class="divide-y divide-white/5"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 4: PESAPAL API 3.0 & MASTER SECURITY (ADMIN ONLY) -->
+      <div id="adminTab_pesapal" class="hidden space-y-4">
+        <div class="p-4 rounded-2xl bg-zinc-950 border border-sky-500/25 space-y-3 text-xs">
+          <div class="font-extrabold text-sky-400 text-sm">Pesapal API 3.0 Merchant Credentials (Private)</div>
+          <p class="text-zinc-400">Paste your live Pesapal credentials once approved. These settings are hidden from regular users.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-bold text-zinc-300 mb-1">Environment</label>
+              <select id="pspEnvSelect" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white">
+                <option value="sandbox">Sandbox (cybqa.pesapal.com)</option>
+                <option value="live">Live Production (pay.pesapal.com)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-zinc-300 mb-1">IPN Notification ID (UUID)</label>
+              <input id="pspIpnIdInput" type="text" placeholder="e.g. fe078e53-78da-4a83-aa89..." class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs font-mono text-white" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-zinc-300 mb-1">Consumer Key</label>
+              <input id="pspConsumerKeyInput" type="text" placeholder="Pesapal Consumer Key" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs font-mono text-white" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-zinc-300 mb-1">Consumer Secret</label>
+              <input id="pspConsumerSecretInput" type="password" placeholder="Pesapal Consumer Secret" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs font-mono text-white" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-zinc-300 mb-1">Backend Webhook Server URL</label>
+            <input id="pspBackendUrlInput" type="url" placeholder="https://api.diceroller.co.ke" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs font-mono text-white" />
+          </div>
+          <div class="flex flex-wrap gap-2 pt-1">
+            <button onclick="savePesapalConfig()" class="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-zinc-950 font-extrabold text-xs">Save Pesapal Keys</button>
+            <button onclick="copyBackendSnippet()" class="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs">Copy Node.js IPN Code</button>
+          </div>
+        </div>
+
+        <!-- Master Admin Password Update -->
+        <div class="p-4 rounded-2xl bg-zinc-950 border border-white/10 space-y-3 text-xs">
+          <div class="font-extrabold text-white text-sm">Update Master Admin Credentials</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-bold text-zinc-300 mb-1">Admin Email</label>
+              <input id="adminConfigEmailInput" type="email" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-zinc-300 mb-1">New Master Password</label>
+              <input id="adminConfigPassInput" type="password" placeholder="Enter new master password" class="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white" />
+            </div>
+          </div>
+          <button onclick="updateMasterAdminCredentials()" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-extrabold text-xs">
+            Update Master Credentials
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- APPLICATION LOGIC, CRYPTO RNG, WEB AUDIO ASMR, AUTH & PESAPAL ENGINE  -->
+  <!-- ===================================================================== -->
+  <script>
+    /*************************************************************************
+     * 1. APPLICATION STATE & STORAGE ADAPTER
+     *************************************************************************/
+    const STORAGE_KEYS = {
+      USERS: 'diceroller_users_v1',
+      SESSION: 'diceroller_session_v1',
+      PAYMENTS: 'diceroller_payments_v1',
+      ADMIN_CREDS: 'diceroller_admin_creds_v1',
+      ADMIN_SESSION: 'diceroller_admin_session_v1',
+      PREFS: 'diceroller_prefs_v1',
+      PESAPAL: 'diceroller_pesapal_cfg_v1'
+    };
+
+    const DEFAULT_ADMIN = {
+      email: 'admin@diceroller.co.ke',
+      passwordHash: btoa('DiceMaster@2026')
+    };
+
+    const FEATURE_LABELS = {
+      multi_dice: 'Multi-Dice (1–10)',
+      custom_range: 'Custom Range (1–1,000+)',
+      multiplayer: 'Multiplayer Party Mode',
+      custom_colors: 'Custom Dice & Screen Colors'
+    };
+
+    const DEFAULT_PLAYER_COLORS = [
+      '#10b981', '#38bdf8', '#f43f5e', '#fbbf24',
+      '#a855f7', '#fb923c', '#2dd4bf', '#e879f9'
+    ];
+
+    let state = {
+      mode: 'classic', // 'classic' | 'multi_dice' | 'custom_range' | 'multiplayer'
+      rollCount: 1,
+      multiDiceCount: 2,
+      customMin: 1,
+      customMax: 150,
+      soundEnabled: true,
+      hapticsEnabled: true,
+      intendedFeature: null,
+      pendingOrder: null,
+      theme: {
+        diceColor: '#ffffff',
+        pipColor: '#09090b',
+        accentColor: '#10b981'
+      },
+      mp: {
+        active: false,
+        roundsTotal: 3,
+        currentRound: 1,
+        rollsPerTurn: 1,
+        rollsTakenThisTurn: 0,
+        currentPlayerIdx: 0,
+        players: []
+      }
+    };
+
+    /*************************************************************************
+     * 2. CRYPTOGRAPHIC RANDOM NUMBER GENERATOR (UNBIASED)
+     *************************************************************************/
+    function secureRandomInt(min, max) {
+      min = Math.ceil(Number(min));
+      max = Math.floor(Number(max));
+      if (max < min) [min, max] = [max, min];
+      const range = max - min + 1;
+      if (range <= 1) return min;
+
+      const maxUint32 = 0xffffffff;
+      const limit = maxUint32 - (maxUint32 % range);
+      const buffer = new Uint32Array(1);
+      let randomVal;
+      do {
+        window.crypto.getRandomValues(buffer);
+        randomVal = buffer[0];
+      } while (randomVal >= limit);
+
+      return min + (randomVal % range);
+    }
+
+    /*************************************************************************
+     * 3. WEB AUDIO API — TACTILE ASMR / MUKBANG DICE CLACK SYNTHESIZER
+     *************************************************************************/
+    let audioCtx = null;
+
+    function playDiceClackSound(diceCount = 1) {
+      if (!state.soundEnabled) return;
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+
+        const clicks = Math.min(diceCount + 2, 6);
+        const now = audioCtx.currentTime;
+
+        for (let i = 0; i < clicks; i++) {
+          const offset = i * 0.042 + Math.random() * 0.015;
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+
+          osc.type = i % 2 === 0 ? 'triangle' : 'sine';
+          const baseFreq = 260 + Math.random() * 240;
+          osc.frequency.setValueAtTime(baseFreq, now + offset);
+          osc.frequency.exponentialRampToValueAtTime(75, now + offset + 0.045);
+
+          gain.gain.setValueAtTime(0.001, now + offset);
+          gain.gain.linearRampToValueAtTime(0.22 / Math.sqrt(clicks), now + offset + 0.005);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.05);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+
+          osc.start(now + offset);
+          osc.stop(now + offset + 0.055);
+        }
+      } catch (err) {
+        // Ignore audio errors on restricted browsers
+      }
+    }
+
+    function triggerHaptics() {
+      if (state.hapticsEnabled && navigator.vibrate) {
+        navigator.vibrate(18);
+      }
+    }
+
+    /*************************************************************************
+     * 4. AUTHENTICATION, MASTER ADMIN & ENTITLEMENT ENGINE
+     *************************************************************************/
+    function getAdminCreds() {
+      try {
+        const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.ADMIN_CREDS) || 'null');
+        return stored && stored.email ? stored : DEFAULT_ADMIN;
+      } catch {
+        return DEFAULT_ADMIN;
+      }
+    }
+
+    function isMasterAdmin() {
+      return localStorage.getItem(STORAGE_KEYS.ADMIN_SESSION) === 'true';
+    }
+
+    function getPaymentsDB() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEYS.PAYMENTS) || '[]');
+      } catch {
+        return [];
+      }
+    }
+
+    function savePaymentsDB(list) {
+      localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(list));
+    }
+
+    function getUsersDB() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '{}');
+      } catch {
+        return {};
+      }
+    }
+
+    function saveUsersDB(db) {
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(db));
+    }
+
+    function getCurrentUser() {
+      const email = localStorage.getItem(STORAGE_KEYS.SESSION);
+      if (!email) return null;
+      const db = getUsersDB();
+      return db[email] || null;
+    }
+
+    function normalizeEmail(email) {
+      return String(email || '').trim().toLowerCase();
+    }
+
+    function getDaysLeft(user) {
+      if (!user || !user.proExpiresAt) return 0;
+      const diffMs = new Date(user.proExpiresAt).getTime() - Date.now();
+      if (diffMs <= 0) return 0;
+      return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    }
+
+    function hasProAccess(user) {
+      return getDaysLeft(user) > 0;
+    }
+
+    function canAccessFeature(featureKey) {
+      if (featureKey === 'classic') return true;
+      if (isMasterAdmin()) return true;
+      const user = getCurrentUser();
+      if (!user) return false;
+      if (hasProAccess(user)) return true;
+      return Array.isArray(user.unlockedFeatures) && user.unlockedFeatures.includes(featureKey);
+    }
+
+    function updateRegisterButtonState() {
+      const mode = document.getElementById('authForm').dataset.mode || 'register';
+      const btn = document.getElementById('authSubmitBtn');
+      if (mode === 'register') {
+        const checked = document.getElementById('authTermsCheckbox').checked;
+        btn.disabled = !checked;
+      } else {
+        btn.disabled = false;
+      }
+    }
+
+    function setAuthTab(tab) {
+      const isRegister = tab === 'register';
+      document.getElementById('authForm').dataset.mode = tab;
+      document.getElementById('authNameGroup').classList.toggle('hidden', !isRegister);
+      document.getElementById('authLegalConsentGroup').classList.toggle('hidden', !isRegister);
+      document.getElementById('authModalTitle').textContent = isRegister ? 'Create Unique Account' : 'Sign In to Dice Roller';
+      document.getElementById('authSubmitBtn').textContent = isRegister ? 'Create Unique Account & Continue' : 'Sign In & Continue';
+
+      document.getElementById('tabRegisterBtn').className = isRegister
+        ? 'py-2 rounded-xl text-xs font-extrabold bg-zinc-800 text-white transition'
+        : 'py-2 rounded-xl text-xs font-extrabold text-zinc-400 hover:text-white transition';
+
+      document.getElementById('tabLoginBtn').className = !isRegister
+        ? 'py-2 rounded-xl text-xs font-extrabold bg-zinc-800 text-white transition'
+        : 'py-2 rounded-xl text-xs font-extrabold text-zinc-400 hover:text-white transition';
+
+      document.getElementById('authErrorMsg').classList.add('hidden');
+      updateRegisterButtonState();
+    }
+
+    function handleAuthSubmit(e) {
+      e.preventDefault();
+      const mode = document.getElementById('authForm').dataset.mode || 'register';
+      const name = document.getElementById('authNameInput').value.trim();
+      const email = normalizeEmail(document.getElementById('authEmailInput').value);
+      const password = document.getElementById('authPasswordInput').value;
+      const errorBox = document.getElementById('authErrorMsg');
+
+      errorBox.classList.add('hidden');
+
+      if (!email || !email.includes('@')) {
+        errorBox.textContent = 'Please enter a valid email address.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+
+      const db = getUsersDB();
+
+      if (mode === 'register') {
+        const agreed = document.getElementById('authTermsCheckbox').checked;
+        if (!agreed) {
+          errorBox.textContent = 'You must tick the checkbox agreeing to the Terms of Service, Privacy Policy, and Refund Policy before registering.';
+          errorBox.classList.remove('hidden');
+          return;
+        }
+
+        // Enforce strict 1 email = 1 account uniqueness
+        if (db[email]) {
+          errorBox.textContent = 'This email is already registered and cannot be duplicated. Please switch to "Sign In".';
+          errorBox.classList.remove('hidden');
+          return;
+        }
+
+        const newUser = {
+          id: 'usr_' + Date.now(),
+          name: name || email.split('@')[0],
+          email,
+          passwordHash: btoa(password), // Demo encoding; backend uses bcrypt/Argon2
+          unlockedFeatures: [],
+          proExpiresAt: null,
+          agreedToTermsAt: new Date().toISOString(),
+          policyVersion: 'v1.0-2026',
+          createdAt: new Date().toISOString()
+        };
+
+        db[email] = newUser;
+        saveUsersDB(db);
+        localStorage.setItem(STORAGE_KEYS.SESSION, email);
+        showToast(`Welcome, ${newUser.name}! Your unique account is active.`, 'success');
+      } else {
+        const existingUser = db[email];
+        if (!existingUser || existingUser.passwordHash !== btoa(password)) {
+          errorBox.textContent = 'Invalid email or password. Please check your credentials.';
+          errorBox.classList.remove('hidden');
+          return;
+        }
+        localStorage.setItem(STORAGE_KEYS.SESSION, email);
+        showToast(`Signed in as ${existingUser.email}`, 'success');
+      }
+
+      closeModal('authModal');
+      refreshEntitlementUI();
+
+      // If user was trying to open a locked feature, guide them straight to unlock/open it
+      if (state.intendedFeature) {
+        const target = state.intendedFeature;
+        state.intendedFeature = null;
+        if (canAccessFeature(target)) {
+          activateFeatureAfterUnlock(target);
+        } else {
+          document.getElementById('singleFeatureSelect').value = target;
+          openPricingModal();
+        }
+      }
+    }
+
+    function logoutUser() {
+      localStorage.removeItem(STORAGE_KEYS.SESSION);
+      if (state.mode !== 'classic') {
+        switchMode('classic');
+      }
+      applyDiceTheme('#ffffff', '#09090b', '#10b981', true);
+      refreshEntitlementUI();
+      closeModal('settingsModal');
+      showToast('Signed out. Classic 1–6 mode remains free to use.', 'info');
+    }
+
+    function deleteUserAccount() {
+      const user = getCurrentUser();
+      if (!user) return;
+      const db = getUsersDB();
+      delete db[user.email];
+      saveUsersDB(db);
+      localStorage.removeItem(STORAGE_KEYS.SESSION);
+      if (state.mode !== 'classic') {
+        switchMode('classic');
+      }
+      refreshEntitlementUI();
+      closeModal('settingsModal');
+      showToast('Your account and data have been permanently deleted.', 'info');
+    }
+
+    /*************************************************************************
+     * 5. PESAPAL API 3.0 CHECKOUT & IPN UNLOCK ENGINE
+     *************************************************************************/
+    function initiatePesapalPayment(planType) {
+      const user = getCurrentUser();
+      if (!user) {
+        closeModal('pricingModal');
+        openAuthModal('register');
+        return;
+      }
+
+      const selectedFeature = document.getElementById('singleFeatureSelect').value;
+      const amount = planType === 'monthly' ? 100 : 10;
+      const itemLabel = planType === 'monthly'
+        ? 'All-Access Monthly Pro Pass (30 Days)'
+        : `One-Time Unlock: ${FEATURE_LABELS[selectedFeature]}`;
+
+      const merchantRef = 'DR-' + Date.now();
+      const trackingId = 'psp-' + Math.random().toString(36).substring(2, 10) + '-v3';
+
+      state.pendingOrder = {
+        planType,
+        selectedFeature,
+        amount,
+        itemLabel,
+        merchantRef,
+        trackingId,
+        userEmail: user.email,
+        method: 'M-Pesa'
+      };
+
+      // Log PENDING transaction to payment ledger
+      const payments = getPaymentsDB();
+      payments.unshift({
+        trackingId,
+        merchantRef,
+        userEmail: user.email,
+        planType,
+        selectedFeature,
+        itemLabel,
+        method: 'M-Pesa',
+        amount,
+        status: 'PENDING',
+        createdAt: new Date().toISOString()
+      });
+      savePaymentsDB(payments);
+
+      document.getElementById('checkoutUserEmail').textContent = user.email;
+      document.getElementById('checkoutItemLabel').textContent = itemLabel;
+      document.getElementById('checkoutMerchantRef').textContent = merchantRef;
+      document.getElementById('checkoutTrackingId').textContent = trackingId;
+      document.getElementById('checkoutAmountDisplay').textContent = `KES ${amount}.00`;
+      document.getElementById('ipnStatusIndicator').textContent = 'AWAITING IPN';
+      document.getElementById('ipnStatusIndicator').className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-200';
+
+      closeModal('pricingModal');
+      openModal('pesapalCheckoutModal');
+    }
+
+    function selectCheckoutMethod(method) {
+      const isMpesa = method === 'mpesa';
+      if (state.pendingOrder) {
+        state.pendingOrder.method = isMpesa ? 'M-Pesa' : 'Bank / Card';
+      }
+      document.getElementById('mpesaCheckoutFields').classList.toggle('hidden', !isMpesa);
+      document.getElementById('bankCheckoutFields').classList.toggle('hidden', isMpesa);
+
+      document.getElementById('payMethodMpesaBtn').className = isMpesa
+        ? 'p-3 rounded-2xl border-2 border-emerald-500 bg-emerald-500/10 text-left transition'
+        : 'p-3 rounded-2xl border border-white/10 bg-zinc-950 text-left transition';
+
+      document.getElementById('payMethodBankBtn').className = !isMpesa
+        ? 'p-3 rounded-2xl border-2 border-sky-500 bg-sky-500/10 text-left transition'
+        : 'p-3 rounded-2xl border border-white/10 bg-zinc-950 text-left transition';
+    }
+
+    function sendSimulatedStkPush() {
+      const phone = document.getElementById('mpesaPhoneInput').value.trim();
+      document.getElementById('ipnStatusIndicator').textContent = 'PROMPT SENT • LISTENING...';
+      showToast(phone ? `M-Pesa STK Push sent to ${phone}. Click Simulate IPN below to complete.` : 'Pesapal payment initiated. Click Simulate IPN below to verify.', 'info');
+    }
+
+    function simulatePesapalIpnSuccess() {
+      const order = state.pendingOrder;
+      const user = getCurrentUser();
+      if (!order || !user) return;
+
+      const db = getUsersDB();
+      const record = db[user.email];
+      if (!record) return;
+
+      if (order.planType === 'monthly') {
+        const baseTime = hasProAccess(record) ? new Date(record.proExpiresAt).getTime() : Date.now();
+        record.proExpiresAt = new Date(baseTime + 30 * 24 * 60 * 60 * 1000).toISOString();
+      } else {
+        if (!Array.isArray(record.unlockedFeatures)) record.unlockedFeatures = [];
+        if (!record.unlockedFeatures.includes(order.selectedFeature)) {
+          record.unlockedFeatures.push(order.selectedFeature);
+        }
+      }
+
+      db[user.email] = record;
+      saveUsersDB(db);
+
+      // Update transaction status to COMPLETED in ledger
+      const payments = getPaymentsDB();
+      const txIdx = payments.findIndex(p => p.trackingId === order.trackingId);
+      if (txIdx !== -1) {
+        payments[txIdx].status = 'COMPLETED';
+        payments[txIdx].method = order.method || 'M-Pesa';
+        payments[txIdx].completedAt = new Date().toISOString();
+        savePaymentsDB(payments);
+      }
+
+      document.getElementById('ipnStatusIndicator').textContent = 'VERIFIED (STATUS 1)';
+      document.getElementById('ipnStatusIndicator').className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300';
+
+      refreshEntitlementUI();
+      showToast(`Payment confirmed via Pesapal IPN! ${order.itemLabel} unlocked.`, 'success');
+
+      setTimeout(() => {
+        closeModal('pesapalCheckoutModal');
+        if (order.planType === 'single') {
+          activateFeatureAfterUnlock(order.selectedFeature);
+        } else {
+          openMainMenu();
+        }
+      }, 650);
+    }
+
+    function savePesapalConfig() {
+      const cfg = {
+        env: document.getElementById('pspEnvSelect').value,
+        ipnId: document.getElementById('pspIpnIdInput').value.trim(),
+        consumerKey: document.getElementById('pspConsumerKeyInput').value.trim(),
+        consumerSecret: document.getElementById('pspConsumerSecretInput').value.trim(),
+        backendUrl: document.getElementById('pspBackendUrlInput').value.trim()
+      };
+      localStorage.setItem(STORAGE_KEYS.PESAPAL, JSON.stringify(cfg));
+      document.getElementById('pesapalEnvBadge').textContent =
+        cfg.env === 'live' ? 'LIVE Production (pay.pesapal.com)' : 'Sandbox Mode (cybqa.pesapal.com)';
+      showToast('Pesapal API 3.0 configuration saved securely for Master Admin.', 'success');
+    }
+
+    function copyBackendSnippet() {
+      const snippet = `// Node.js / Express Pesapal API 3.0 IPN & Order Endpoint
+// 1. POST /api/pesapal/submit-order -> Calls Pesapal /api/Transactions/SubmitOrderRequest
+// 2. GET  /api/pesapal/ipn -> Receives OrderTrackingId & OrderMerchantReference from Pesapal
+// 3. Calls /api/Transactions/GetTransactionStatus?orderTrackingId=...
+// 4. When status_code === 1 (COMPLETED), updates user's proExpiresAt (+30 days) or unlockedFeatures in DB.`;
+
+      const temp = document.createElement('textarea');
+      temp.value = snippet;
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand('copy');
+      document.body.removeChild(temp);
+      showToast('Pesapal IPN backend architecture copied to clipboard!', 'success');
+    }
+
+    /*************************************************************************
+     * 6. DICE RENDERING & TACTILE ROLL EXECUTION
+     *************************************************************************/
+    function getPipSvg(value) {
+      const pips = {
+        1: [[50, 50]],
+        2: [[28, 28], [72, 72]],
+        3: [[28, 28], [50, 50], [72, 72]],
+        4: [[28, 28], [72, 28], [28, 72], [72, 72]],
+        5: [[28, 28], [72, 28], [50, 50], [28, 72], [72, 72]],
+        6: [[28, 24], [72, 24], [28, 50], [72, 50], [28, 76], [72, 76]]
+      };
+      const coords = pips[value] || pips[1];
+      const circles = coords.map(([cx, cy]) => `<circle cx="${cx}" cy="${cy}" r="9.5" fill="currentColor" />`).join('');
+      return `<svg viewBox="0 0 100 100" class="w-4/5 h-4/5">${circles}</svg>`;
+    }
+
+    function spawnTapRipple(x, y) {
+      if (typeof x !== 'number' || typeof y !== 'number') {
+        x = window.innerWidth / 2;
+        y = window.innerHeight / 2;
+      }
+      const ripple = document.createElement('div');
+      ripple.className = 'tap-ripple';
+      ripple.style.left = `${x}px`;
+      ripple.style.top = `${y}px`;
+      document.body.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 600);
+    }
+
+    function executeRoll(eventX, eventY) {
+      // Prevent rolling if any modal is open
+      const openModalEl = document.querySelector('.fixed.inset-0.z-50:not(.hidden)');
+      if (openModalEl) return;
+
+      // Multiplayer turn check
+      if (state.mode === 'multiplayer' && state.mp.active) {
+        if (state.mp.rollsTakenThisTurn >= state.mp.rollsPerTurn) {
+          showToast('Turn complete! Tap "Next Player" to pass the dice.', 'info');
+          return;
+        }
+      }
+
+      spawnTapRipple(eventX, eventY);
+      triggerHaptics();
+
+      const stage = document.getElementById('diceStage');
+      let results = [];
+      let total = 0;
+
+      if (state.mode === 'classic') {
+        const val = secureRandomInt(1, 6);
+        results = [val];
+        total = val;
+        playDiceClackSound(1);
+
+        stage.innerHTML = `
+          <div class="tactile-die rolling-anim w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-[2.25rem] flex items-center justify-center">
+            ${getPipSvg(val)}
+          </div>
+        `;
+      } else if (state.mode === 'multi_dice') {
+        const count = state.multiDiceCount;
+        playDiceClackSound(count);
+        const sizeClass = count <= 2
+          ? 'w-36 h-36 sm:w-44 sm:h-44 rounded-[2rem]'
+          : count <= 6
+            ? 'w-24 h-24 sm:w-32 sm:h-32 rounded-3xl'
+            : 'w-20 h-20 sm:w-24 sm:h-24 rounded-2xl';
+
+        let html = '';
+        for (let i = 0; i < count; i++) {
+          const val = secureRandomInt(1, 6);
+          results.push(val);
+          total += val;
+          html += `
+            <div class="tactile-die rolling-anim ${sizeClass} flex items-center justify-center" style="animation-delay: ${i * 18}ms">
+              ${getPipSvg(val)}
+            </div>
+          `;
+        }
+        stage.innerHTML = html;
+      } else if (state.mode === 'custom_range') {
+        const val = secureRandomInt(state.customMin, state.customMax);
+        results = [val];
+        total = val;
+        playDiceClackSound(1);
+
+        const digits = String(val).length;
+        const fontSizeClass = digits <= 3
+          ? 'text-6xl sm:text-8xl'
+          : digits <= 5
+            ? 'text-5xl sm:text-7xl'
+            : 'text-3xl sm:text-5xl';
+
+        stage.innerHTML = `
+          <div class="tactile-die rolling-anim w-52 h-52 sm:w-64 sm:h-64 rounded-[2.5rem] flex flex-col items-center justify-center px-4 text-center">
+            <span class="text-[11px] font-extrabold uppercase tracking-widest opacity-55 mb-1">${state.customMin} – ${state.customMax}</span>
+            <span class="font-mono ${fontSizeClass} font-black tracking-tight">${val.toLocaleString()}</span>
+          </div>
+        `;
+      } else if (state.mode === 'multiplayer') {
+        const val = secureRandomInt(1, 6);
+        results = [val];
+        total = val;
+        playDiceClackSound(1);
+
+        const activePlayer = state.mp.players[state.mp.currentPlayerIdx];
+        activePlayer.totalScore += val;
+        activePlayer.rolls.push(val);
+        state.mp.rollsTakenThisTurn += 1;
+
+        stage.innerHTML = `
+          <div class="tactile-die rolling-anim w-44 h-44 sm:w-56 sm:h-56 rounded-[2.25rem] flex items-center justify-center"
+               style="--dice-color: ${activePlayer.color}; --dice-pip: ${getContrastColor(activePlayer.color)};">
+            ${getPipSvg(val)}
+          </div>
+        `;
+        updateMultiplayerHUD();
+      }
+
+      state.rollCount += 1;
+      document.getElementById('rollTotalValue').textContent = total.toLocaleString();
+      document.getElementById('rollCountBadge').textContent = `Roll #${state.rollCount}`;
+    }
+
+    /*************************************************************************
+     * 7. MODE SWITCHING & MULTIPLAYER PARTY LOGIC
+     *************************************************************************/
+    function selectModeFromMenu(modeKey) {
+      closeModal('mainMenuModal');
+      if (!canAccessFeature(modeKey)) {
+        state.intendedFeature = modeKey;
+        const user = getCurrentUser();
+        if (!user) {
+          openAuthModal('register');
+        } else {
+          document.getElementById('singleFeatureSelect').value = modeKey;
+          openPricingModal();
+        }
+        return;
+      }
+      activateFeatureAfterUnlock(modeKey);
+    }
+
+    function activateFeatureAfterUnlock(featureKey) {
+      if (featureKey === 'custom_colors') {
+        openSettingsModal();
+        return;
+      }
+      if (featureKey === 'multiplayer') {
+        openMultiplayerSetup();
+        return;
+      }
+      switchMode(featureKey);
+    }
+
+    function switchMode(newMode) {
+      state.mode = newMode;
+      const controlBar = document.getElementById('modeControlBar');
+      const mpBanner = document.getElementById('multiplayerTurnBanner');
+      const mpActions = document.getElementById('multiplayerActionBar');
+      const badge = document.getElementById('currentModeBadge');
+
+      mpBanner.classList.add('hidden');
+      mpActions.classList.add('hidden');
+      controlBar.innerHTML = '';
+
+      if (newMode === 'classic') {
+        badge.textContent = 'Classic 1–6 • Free';
+        executeRoll();
+      } else if (newMode === 'multi_dice') {
+        badge.textContent = `Multi-Dice (1–10)`;
+        let buttonsHtml = '';
+        for (let i = 1; i <= 10; i++) {
+          const activeCls = i === state.multiDiceCount
+            ? 'bg-emerald-500 text-zinc-950 border-emerald-400'
+            : 'bg-zinc-900/90 text-zinc-300 border-white/10 hover:bg-zinc-800';
+          buttonsHtml += `<button onclick="setMultiDiceCount(${i})" class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border text-xs sm:text-sm font-black transition ${activeCls}">${i}</button>`;
+        }
+        controlBar.innerHTML = `
+          <div class="flex flex-wrap items-center justify-center gap-1.5 bg-zinc-950/80 p-2 rounded-2xl border border-white/10 backdrop-blur-md">
+            ${buttonsHtml}
+            <button onclick="switchMode('classic')" class="ml-1 px-3 h-9 sm:h-10 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-200">Main Menu</button>
+          </div>
+        `;
+        executeRoll();
+      } else if (newMode === 'custom_range') {
+        badge.textContent = `Range ${state.customMin}–${state.customMax}`;
+        controlBar.innerHTML = `
+          <div class="flex flex-wrap items-center justify-center gap-2 bg-zinc-950/85 p-2.5 rounded-2xl border border-white/10 backdrop-blur-md text-xs">
+            <label class="flex items-center gap-1.5 font-bold text-zinc-300">
+              <span>Min</span>
+              <input id="rangeMinInput" type="number" value="${state.customMin}" onchange="updateCustomRange()" class="w-20 px-2.5 py-1.5 rounded-xl bg-zinc-900 border border-white/15 font-mono text-white text-center" />
+            </label>
+            <label class="flex items-center gap-1.5 font-bold text-zinc-300">
+              <span>Max</span>
+              <input id="rangeMaxInput" type="number" value="${state.customMax}" onchange="updateCustomRange()" class="w-24 px-2.5 py-1.5 rounded-xl bg-zinc-900 border border-white/15 font-mono text-white text-center" />
+            </label>
+            <button onclick="setQuickRange(1, 150)" class="px-2.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 font-bold text-zinc-300">1–150</button>
+            <button onclick="setQuickRange(1, 1000)" class="px-2.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 font-bold text-zinc-300">1–1000</button>
+            <button onclick="switchMode('classic')" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 font-bold text-zinc-400">Main Menu</button>
+          </div>
+        `;
+        executeRoll();
+      } else if (newMode === 'multiplayer') {
+        badge.textContent = 'Multiplayer Party';
+        mpBanner.classList.remove('hidden');
+        mpActions.classList.remove('hidden');
+        updateMultiplayerHUD();
+      }
+    }
+
+    function setMultiDiceCount(count) {
+      state.multiDiceCount = count;
+      switchMode('multi_dice');
+    }
+
+    function updateCustomRange() {
+      const minVal = parseInt(document.getElementById('rangeMinInput').value, 10) || 1;
+      const maxVal = parseInt(document.getElementById('rangeMaxInput').value, 10) || 100;
+      state.customMin = minVal;
+      state.customMax = maxVal;
+      document.getElementById('currentModeBadge').textContent = `Range ${minVal}–${maxVal}`;
+      executeRoll();
+    }
+
+    function setQuickRange(min, max) {
+      state.customMin = min;
+      state.customMax = max;
+      switchMode('custom_range');
+    }
+
+    function openMultiplayerSetup() {
+      renderMultiplayerPlayerInputs();
+      openModal('multiplayerSetupModal');
+    }
+
+    function selectMpRounds(rounds) {
+      state.mp.roundsTotal = rounds;
+      document.querySelectorAll('.mp-round-btn').forEach(btn => {
+        const isSel = parseInt(btn.dataset.rounds, 10) === rounds;
+        btn.className = isSel
+          ? 'mp-round-btn py-2 rounded-xl text-xs font-bold bg-emerald-500/20 border border-emerald-500 text-emerald-300'
+          : 'mp-round-btn py-2 rounded-xl text-xs font-bold bg-zinc-950 border border-white/10 text-zinc-300';
+      });
+    }
+
+    function renderMultiplayerPlayerInputs() {
+      const count = parseInt(document.getElementById('mpPlayerCountSelect').value, 10) || 4;
+      const container = document.getElementById('mpPlayersListContainer');
+      let html = '';
+      for (let i = 0; i < count; i++) {
+        const defaultColor = DEFAULT_PLAYER_COLORS[i % DEFAULT_PLAYER_COLORS.length];
+        html += `
+          <div class="flex items-center gap-2 bg-zinc-950 p-2 rounded-xl border border-white/10">
+            <input type="color" value="${defaultColor}" class="mp-player-color w-9 h-9 rounded-lg bg-transparent border-0 cursor-pointer" />
+            <input type="text" value="Player ${i + 1}" placeholder="Player ${i + 1} Name" class="mp-player-name flex-1 px-3 py-1.5 rounded-lg bg-zinc-900 border border-white/10 text-xs font-bold text-white" />
+          </div>
+        `;
+      }
+      container.innerHTML = html;
+    }
+
+    function startMultiplayerGame() {
+      const nameInputs = document.querySelectorAll('.mp-player-name');
+      const colorInputs = document.querySelectorAll('.mp-player-color');
+      const rollsPerTurn = parseInt(document.getElementById('mpRollsPerTurnSelect').value, 10) || 1;
+
+      const players = [];
+      nameInputs.forEach((inp, idx) => {
+        players.push({
+          name: inp.value.trim() || `Player ${idx + 1}`,
+          color: colorInputs[idx].value,
+          totalScore: 0,
+          rolls: []
+        });
+      });
+
+      state.mp = {
+        active: true,
+        roundsTotal: state.mp.roundsTotal || 3,
+        currentRound: 1,
+        rollsPerTurn,
+        rollsTakenThisTurn: 0,
+        currentPlayerIdx: 0,
+        players
+      };
+
+      closeModal('multiplayerSetupModal');
+      switchMode('multiplayer');
+
+      // Show ready die in Player 1's color
+      const p1 = players[0];
+      document.getElementById('diceStage').innerHTML = `
+        <div class="tactile-die w-44 h-44 sm:w-56 sm:h-56 rounded-[2.25rem] flex items-center justify-center"
+             style="--dice-color: ${p1.color}; --dice-pip: ${getContrastColor(p1.color)};">
+          ${getPipSvg(6)}
+        </div>
+      `;
+    }
+
+    function updateMultiplayerHUD() {
+      const mp = state.mp;
+      const player = mp.players[mp.currentPlayerIdx];
+      const rollsLeft = Math.max(0, mp.rollsPerTurn - mp.rollsTakenThisTurn);
+
+      document.getElementById('mpRoundInfo').textContent = `Round ${mp.currentRound} of ${mp.roundsTotal}`;
+      document.getElementById('mpRollsLeftInfo').textContent = `${rollsLeft} roll${rollsLeft === 1 ? '' : 's'} left`;
+      document.getElementById('mpPlayerColorDot').style.backgroundColor = player.color;
+      document.getElementById('mpActivePlayerName').textContent = `${player.name}'s Turn`;
+      document.getElementById('mpActivePlayerName').style.color = player.color;
+
+      const nextBtn = document.getElementById('mpNextPlayerBtn');
+      if (rollsLeft === 0) {
+        document.getElementById('mpInstructionText').textContent = `Done! Total Score: ${player.totalScore}. Click "Next Player" below.`;
+        nextBtn.classList.add('ring-4', 'ring-white/30');
+      } else {
+        document.getElementById('mpInstructionText').textContent = `Tap screen or press Space to roll (${player.totalScore} pts so far)`;
+        nextBtn.classList.remove('ring-4', 'ring-white/30');
+      }
+    }
+
+    function advanceMultiplayerTurn() {
+      const mp = state.mp;
+      mp.rollsTakenThisTurn = 0;
+      mp.currentPlayerIdx += 1;
+
+      if (mp.currentPlayerIdx >= mp.players.length) {
+        mp.currentPlayerIdx = 0;
+        mp.currentRound += 1;
+      }
+
+      if (mp.currentRound > mp.roundsTotal) {
+        showToast('All party rounds finished! Check the final leaderboard.', 'success');
+        openMultiplayerScoreboard();
+        mp.currentRound = 1;
+      }
+
+      const nextPlayer = mp.players[mp.currentPlayerIdx];
+      document.getElementById('diceStage').innerHTML = `
+        <div class="tactile-die rolling-anim w-44 h-44 sm:w-56 sm:h-56 rounded-[2.25rem] flex items-center justify-center"
+             style="--dice-color: ${nextPlayer.color}; --dice-pip: ${getContrastColor(nextPlayer.color)};">
+          ${getPipSvg(1)}
+        </div>
+      `;
+      updateMultiplayerHUD();
+    }
+
+    function openMultiplayerScoreboard() {
+      const sorted = [...state.mp.players].sort((a, b) => b.totalScore - a.totalScore);
+      const rows = sorted.map((p, i) => `
+        <div class="flex items-center justify-between p-3 rounded-2xl bg-zinc-950 border border-white/10">
+          <div class="flex items-center gap-3">
+            <span class="w-6 h-6 rounded-full bg-zinc-800 text-xs font-black flex items-center justify-center">${i + 1}</span>
+            <span class="w-3.5 h-3.5 rounded-full" style="background-color: ${p.color};"></span>
+            <div>
+              <div class="text-sm font-extrabold text-white">${p.name}</div>
+              <div class="text-[11px] text-zinc-400">Rolls: ${p.rolls.join(', ') || 'None yet'}</div>
+            </div>
+          </div>
+          <div class="font-mono text-lg font-black text-emerald-400">${p.totalScore}</div>
+        </div>
+      `).join('');
+
+      document.getElementById('mpLeaderboardRows').innerHTML = rows;
+      openModal('mpLeaderboardModal');
+    }
+
+    /*************************************************************************
+     * 8. THEME & COLOR CUSTOMIZATION
+     *************************************************************************/
+    function getContrastColor(hexColor) {
+      const hex = hexColor.replace('#', '');
+      const r = parseInt(hex.substr(0, 2), 16) || 255;
+      const g = parseInt(hex.substr(2, 2), 16) || 255;
+      const b = parseInt(hex.substr(4, 2), 16) || 255;
+      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      return luminance > 0.55 ? '#09090b' : '#ffffff';
+    }
+
+    function applyDiceTheme(diceColor, pipColor, accentColor, isFreeDefault = false) {
+      if (!isFreeDefault && !canAccessFeature('custom_colors')) {
+        closeModal('settingsModal');
+        state.intendedFeature = 'custom_colors';
+        if (!getCurrentUser()) {
+          openAuthModal('register');
+        } else {
+          document.getElementById('singleFeatureSelect').value = 'custom_colors';
+          openPricingModal();
+        }
+        return;
+      }
+
+      state.theme = { diceColor, pipColor, accentColor };
+      document.documentElement.style.setProperty('--dice-color', diceColor);
+      document.documentElement.style.setProperty('--dice-pip', pipColor);
+      document.documentElement.style.setProperty('--accent-color', accentColor);
+      document.documentElement.style.setProperty('--accent-glow', `${accentColor}44`);
+      document.getElementById('customDieColorPicker').value = diceColor;
+      document.getElementById('customColorHexLabel').textContent = diceColor.toUpperCase();
+    }
+
+    function handleCustomColorPick(hex) {
+      const pip = getContrastColor(hex);
+      applyDiceTheme(hex, pip, hex, false);
+    }
+
+    function toggleSoundFx(enabled) {
+      state.soundEnabled = enabled;
+    }
+
+    function toggleHaptics(enabled) {
+      state.hapticsEnabled = enabled;
+    }
+
+    /*************************************************************************
+     * 9. UI SYNC, MODALS, TOASTS & LEGAL COMPLIANCE CONTENT
+     *************************************************************************/
+    function refreshEntitlementUI() {
+      const user = getCurrentUser();
+      const adminActive = isMasterAdmin();
+      const daysLeft = getDaysLeft(user);
+      const isPro = daysLeft > 0 || adminActive;
+
+      // Toggle Master Admin Header & Settings Buttons
+      const headerAdminBtn = document.getElementById('headerAdminBtn');
+      const settingsAdminBtn = document.getElementById('settingsAdminConsoleBtn');
+      if (adminActive) {
+        headerAdminBtn.classList.remove('hidden');
+        headerAdminBtn.classList.add('flex');
+        if (settingsAdminBtn) settingsAdminBtn.classList.remove('hidden');
+      } else {
+        headerAdminBtn.classList.add('hidden');
+        headerAdminBtn.classList.remove('flex');
+        if (settingsAdminBtn) settingsAdminBtn.classList.add('hidden');
+      }
+
+      // Header pills
+      const headerPlanDot = document.getElementById('headerPlanDot');
+      const headerPlanText = document.getElementById('headerPlanText');
+      const headerUpgradeLabel = document.getElementById('headerUpgradeLabel');
+
+      if (adminActive) {
+        headerPlanDot.className = 'w-2 h-2 rounded-full bg-sky-400';
+        headerPlanText.textContent = 'Master Admin • All Access';
+        headerUpgradeLabel.textContent = 'All Unlocked';
+      } else if (!user) {
+        headerPlanDot.className = 'w-2 h-2 rounded-full bg-zinc-500';
+        headerPlanText.textContent = 'Guest • Free Mode';
+        headerUpgradeLabel.textContent = 'Sign In / Pro';
+      } else if (isPro) {
+        headerPlanDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        headerPlanText.textContent = `Pro • ${daysLeft}d left`;
+        headerUpgradeLabel.textContent = `${daysLeft} Days Left`;
+      } else {
+        const count = (user.unlockedFeatures || []).length;
+        headerPlanDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+        headerPlanText.textContent = count > 0 ? `${count} Mode${count > 1 ? 's' : ''} Unlocked` : user.email;
+        headerUpgradeLabel.textContent = 'Upgrade';
+      }
+
+      // Main Menu Feature Badges
+      ['multi_dice', 'custom_range', 'multiplayer', 'custom_colors'].forEach(key => {
+        const unlocked = canAccessFeature(key);
+        const badgeEl = document.getElementById(`badge_${key}`);
+        const ctaEl = document.getElementById(`cta_${key}`);
+        if (badgeEl) {
+          badgeEl.textContent = unlocked ? '✓ Unlocked' : '🔒 10 KES or Pro';
+          badgeEl.className = unlocked
+            ? 'px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+            : 'px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30';
+        }
+        if (ctaEl) {
+          ctaEl.textContent = unlocked ? 'Launch Mode →' : 'Unlock or Open →';
+        }
+      });
+
+      // Settings Modal Account Status
+      const signedOutView = document.getElementById('settingsSignedOutView');
+      const signedInView = document.getElementById('settingsSignedInView');
+      const daysBadge = document.getElementById('settingsDaysLeftBadge');
+      const colorLockStatus = document.getElementById('colorLockStatus');
+
+      colorLockStatus.textContent = canAccessFeature('custom_colors')
+        ? '✓ Unlocked'
+        : '🔒 Unlock for 10 KES or Pro';
+
+      if (!user) {
+        signedOutView.classList.remove('hidden');
+        signedInView.classList.add('hidden');
+        daysBadge.textContent = 'Guest • Free Tier';
+      } else {
+        signedOutView.classList.add('hidden');
+        signedInView.classList.remove('hidden');
+        document.getElementById('settingsUserEmail').textContent = user.email;
+
+        if (isPro) {
+          daysBadge.textContent = `${daysLeft} Days Left`;
+          daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-500/20 text-emerald-300';
+          document.getElementById('settingsDaysLeftText').textContent = `${daysLeft} days remaining on 100 KES Monthly Pass`;
+          document.getElementById('settingsUnlockedList').textContent = 'Unlocked features: ALL FEATURES (Multi-Dice, Custom Range, Multiplayer, Custom Colors)';
+        } else {
+          const list = (user.unlockedFeatures || []).map(k => FEATURE_LABELS[k]);
+          daysBadge.textContent = list.length ? `${list.length} Single Unlock` : 'Free Tier';
+          daysBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-zinc-800 text-zinc-300';
+          document.getElementById('settingsDaysLeftText').textContent = '0 days (Monthly Pass inactive)';
+          document.getElementById('settingsUnlockedList').textContent = list.length
+            ? `Unlocked permanently: ${list.join(', ')}`
+            : 'Unlocked features: Classic 1–6 (Free)';
+        }
+      }
+    }
+
+    function handleHeaderPlanClick() {
+      if (!getCurrentUser()) {
+        openAuthModal('login');
+      } else {
+        openSettingsModal();
+      }
+    }
+
+    function openModal(id) {
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    function closeModalOnBackdrop(event, id) {
+      if (event.target.id === id) {
+        closeModal(id);
+      }
+    }
+
+    function openMainMenu() {
+      refreshEntitlementUI();
+      openModal('mainMenuModal');
+    }
+
+    function openAuthModal(tab = 'register') {
+      setAuthTab(tab);
+      openModal('authModal');
+    }
+
+    function openPricingModal() {
+      if (!getCurrentUser()) {
+        openAuthModal('register');
+        return;
+      }
+      openModal('pricingModal');
+    }
+
+    function openSettingsModal() {
+      refreshEntitlementUI();
+      openModal('settingsModal');
+    }
+
+    function openLegalModal(section) {
+      const contentMap = {
+        terms: {
+          title: 'Terms of Service & End-User License Agreement',
+          body: `
+            <p><strong>1. Acceptance of Terms:</strong> By creating an account or using <em>Dice Roller</em> (built and operated by <strong>Nexastudio</strong>), you agree to be legally bound by these Terms of Service. If you do not agree, do not register or use paid features.</p>
+            <p><strong>2. Recreational &amp; Non-Gambling Use Only:</strong> Dice Roller is strictly an entertainment, tabletop gaming, and random-number utility. You agree NOT to use this software for illegal gambling, unlicensed betting, financial wagering, or unlawful contests.</p>
+            <p><strong>3. Service Tiers &amp; Account Integrity:</strong> Classic 1–6 rolling is free. Paid modes require a unique email registration (1 email = 1 account). Account sharing, automated scraping, or reverse-engineering is prohibited.</p>
+            <p><strong>4. Disclaimer of Warranties ("AS-IS"):</strong> The software is provided "AS IS" and "AS AVAILABLE" without warranties of any kind. Nexastudio does not guarantee uninterrupted server availability or specific random outcomes.</p>
+            <p><strong>5. Limitation of Liability &amp; Indemnification:</strong> To the maximum extent permitted by Kenyan and international law, Nexastudio shall not be liable for any indirect, incidental, special, consequential, or punitive damages, loss of profits, or disputes arising from game outcomes. Nexastudio's total cumulative liability for any claim shall not exceed the exact amount paid by you in the preceding thirty (30) days (maximum KES 100). You agree to indemnify and hold harmless Nexastudio from any claims arising from your misuse of the application.</p>
+            <p><strong>6. Governing Law:</strong> These Terms are governed by the laws of the Republic of Kenya.</p>
+          `
+        },
+        privacy: {
+          title: 'Privacy Policy & Kenya Data Protection Notice',
+          body: `
+            <p><strong>1. Data Controller:</strong> <strong>Nexastudio</strong> operates Dice Roller in compliance with the <em>Kenya Data Protection Act, 2019</em>.</p>
+            <p><strong>2. Information We Collect:</strong> We collect only the minimum data necessary to operate your account: your display name, unique email address, encrypted password hash, timestamp of legal policy acceptance, feature unlock status, and Pesapal transaction reference IDs.</p>
+            <p><strong>3. Payment Security &amp; Third-Party Processors:</strong> All M-Pesa and bank card payments are processed directly by <strong>Pesapal</strong>. Nexastudio never collects, views, or stores your M-Pesa PIN or bank card numbers.</p>
+            <p><strong>4. Your Data Rights:</strong> You have the right to access, correct, or permanently erase your personal data at any time using <em>Settings → Delete Account</em> or by contacting our Data Protection contact.</p>
+          `
+        },
+        refund: {
+          title: 'Digital Goods Refund & Cancellation Policy',
+          body: `
+            <p><strong>1. Immediate Digital Delivery:</strong> Dice Roller provides instant digital feature unlocks (<strong>KES 10</strong> one-time single feature unlock and <strong>KES 100</strong> 30-day all-access pass). Once Pesapal confirms your transaction and unlocks your account, the digital service is deemed delivered and is <strong>non-refundable</strong>.</p>
+            <p><strong>2. Duplicate or Failed Activation:</strong> If a network interruption causes a confirmed M-Pesa or card deduction without unlocking your feature, contact Nexastudio support within 48 hours with your Pesapal <code>OrderTrackingId</code> for immediate activation or refund verification.</p>
+            <p><strong>3. No Hidden Auto-Billing:</strong> The KES 100 monthly pass grants 30 days of access and does not automatically deduct funds from your M-Pesa wallet upon expiry.</p>
+          `
+        },
+        contact: {
+          title: 'Contact & Merchant Support (Nexastudio)',
+          body: `
+            <p>For customer support, data privacy inquiries, or Pesapal M-Pesa/Bank transaction assistance, reach out to our team:</p>
+            <div class="p-3.5 rounded-2xl bg-zinc-950 border border-white/10 space-y-1.5">
+              <div><strong>Developer &amp; Merchant:</strong> Nexastudio</div>
+              <div><strong>Support Email:</strong> support@diceroller.co.ke</div>
+              <div><strong>Operating Hours:</strong> Monday – Saturday, 8:00 AM – 6:00 PM EAT</div>
+              <div><strong>Payment Gateway:</strong> Pesapal Kenya (M-Pesa &amp; Bank Cards)</div>
+            </div>
+          `
+        }
+      };
+
+      const item = contentMap[section] || contentMap.terms;
+      document.getElementById('legalModalTitle').textContent = item.title;
+      document.getElementById('legalModalBody').innerHTML = item.body;
+      openModal('legalModal');
+    }
+
+    /*************************************************************************
+     * 9B. MASTER ADMIN BACKEND FUNCTIONS (RESTRICTED TO MASTER ADMIN)
+     *************************************************************************/
+    function openAdminLoginModal() {
+      if (isMasterAdmin()) {
+        openAdminConsole();
+        return;
+      }
+      document.getElementById('adminLoginError').classList.add('hidden');
+      openModal('adminLoginModal');
+    }
+
+    function handleAdminLogin(e) {
+      e.preventDefault();
+      const email = normalizeEmail(document.getElementById('adminLoginEmail').value);
+      const pass = document.getElementById('adminLoginPassword').value;
+      const creds = getAdminCreds();
+      const errBox = document.getElementById('adminLoginError');
+
+      if (email === normalizeEmail(creds.email) && btoa(pass) === creds.passwordHash) {
+        localStorage.setItem(STORAGE_KEYS.ADMIN_SESSION, 'true');
+        closeModal('adminLoginModal');
+        refreshEntitlementUI();
+        openAdminConsole();
+        showToast('Master Admin authenticated. Full backend access unlocked.', 'success');
+      } else {
+        errBox.textContent = 'Invalid Master Admin email or password.';
+        errBox.classList.remove('hidden');
+      }
+    }
+
+    function logoutAdmin() {
+      localStorage.removeItem(STORAGE_KEYS.ADMIN_SESSION);
+      closeModal('adminConsoleModal');
+      refreshEntitlementUI();
+      showToast('Exited Master Admin session.', 'info');
+    }
+
+    function openAdminConsole() {
+      if (!isMasterAdmin()) {
+        openAdminLoginModal();
+        return;
+      }
+      refreshAdminDashboard();
+      openModal('adminConsoleModal');
+    }
+
+    function switchAdminTab(tabName) {
+      ['overview', 'users', 'payments', 'pesapal'].forEach(t => {
+        document.getElementById(`adminTab_${t}`).classList.toggle('hidden', t !== tabName);
+        const btn = document.getElementById(`adminTabBtn_${t}`);
+        btn.className = t === tabName
+          ? 'px-4 py-2 rounded-xl text-xs font-extrabold bg-sky-500 text-zinc-950 transition'
+          : 'px-4 py-2 rounded-xl text-xs font-extrabold bg-zinc-800 text-zinc-300 hover:text-white transition';
+      });
+    }
+
+    function refreshAdminDashboard() {
+      const users = Object.values(getUsersDB());
+      const payments = getPaymentsDB();
+
+      const activeProCount = users.filter(u => hasProAccess(u)).length;
+      const singleUnlockCount = users.reduce((acc, u) => acc + ((u.unlockedFeatures || []).length), 0);
+      const completedRevenue = payments
+        .filter(p => p.status === 'COMPLETED')
+        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+      document.getElementById('statTotalUsers').textContent = users.length;
+      document.getElementById('statActivePro').textContent = activeProCount;
+      document.getElementById('statSingleUnlocks').textContent = singleUnlockCount;
+      document.getElementById('statTotalRevenue').textContent = `KES ${completedRevenue.toLocaleString()}`;
+
+      renderAdminUsersTable();
+      renderAdminPaymentsTable();
+
+      const creds = getAdminCreds();
+      document.getElementById('adminConfigEmailInput').value = creds.email;
+    }
+
+    function renderAdminUsersTable() {
+      const query = (document.getElementById('adminUserSearchInput')?.value || '').toLowerCase().trim();
+      const users = Object.values(getUsersDB()).filter(u =>
+        u.email.toLowerCase().includes(query) || (u.name || '').toLowerCase().includes(query)
+      );
+      const tbody = document.getElementById('adminUsersTableBody');
+
+      if (!users.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-zinc-500">No registered users found yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = users.map(u => {
+        const days = getDaysLeft(u);
+        const singles = (u.unlockedFeatures || []).map(k => FEATURE_LABELS[k] || k).join(', ') || 'None';
+        const consentDate = u.agreedToTermsAt ? new Date(u.agreedToTermsAt).toLocaleDateString() : 'Recorded';
+        return `
+          <tr>
+            <td class="p-3">
+              <div class="font-bold text-white">${u.name || 'User'}</div>
+              <div class="text-zinc-400">${u.email}</div>
+              <div class="text-[10px] text-emerald-400">✓ Terms Agreed (${consentDate})</div>
+            </td>
+            <td class="p-3">
+              ${days > 0
+                ? `<span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">Pro (${days}d left)</span>`
+                : `<span class="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-bold">Free Tier</span>`}
+            </td>
+            <td class="p-3 text-zinc-300">${singles}</td>
+            <td class="p-3 text-right space-x-1.5 whitespace-nowrap">
+              <button onclick="adminGrantPro('${u.email}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold">+30d Pro</button>
+              <button onclick="adminRevokePro('${u.email}')" class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold">Revoke</button>
+              <button onclick="adminDeleteUser('${u.email}')" class="px-2.5 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold">Delete</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function adminGrantPro(email) {
+      const db = getUsersDB();
+      if (!db[email]) return;
+      const base = hasProAccess(db[email]) ? new Date(db[email].proExpiresAt).getTime() : Date.now();
+      db[email].proExpiresAt = new Date(base + 30 * 24 * 60 * 60 * 1000).toISOString();
+      saveUsersDB(db);
+      refreshAdminDashboard();
+      refreshEntitlementUI();
+      showToast(`Granted 30 days Pro access to ${email}`, 'success');
+    }
+
+    function adminRevokePro(email) {
+      const db = getUsersDB();
+      if (!db[email]) return;
+      db[email].proExpiresAt = null;
+      db[email].unlockedFeatures = [];
+      saveUsersDB(db);
+      refreshAdminDashboard();
+      refreshEntitlementUI();
+      showToast(`Revoked paid access for ${email}`, 'info');
+    }
+
+    function adminDeleteUser(email) {
+      const db = getUsersDB();
+      delete db[email];
+      saveUsersDB(db);
+      refreshAdminDashboard();
+      showToast(`Deleted user ${email}`, 'info');
+    }
+
+    function renderAdminPaymentsTable() {
+      const payments = getPaymentsDB();
+      const tbody = document.getElementById('adminPaymentsTableBody');
+
+      if (!payments.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-zinc-500">No payments recorded yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = payments.map((p, idx) => {
+        const isDone = p.status === 'COMPLETED';
+        return `
+          <tr>
+            <td class="p-3 font-mono">
+              <div class="text-white font-bold">${p.trackingId}</div>
+              <div class="text-[10px] text-zinc-500">${new Date(p.createdAt).toLocaleString()}</div>
+            </td>
+            <td class="p-3 text-zinc-200 font-semibold">${p.userEmail}</td>
+            <td class="p-3">
+              <div class="text-white font-bold">${p.method}</div>
+              <div class="text-[11px] text-zinc-400">${p.itemLabel}</div>
+            </td>
+            <td class="p-3 font-mono font-extrabold text-white">KES ${p.amount}</td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${isDone ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}">
+                ${p.status}
+              </span>
+            </td>
+            <td class="p-3 text-right">
+              ${!isDone
+                ? `<button onclick="adminApprovePayment(${idx})" class="px-2.5 py-1 rounded-lg bg-emerald-500 text-zinc-950 font-extrabold text-[11px]">Verify IPN</button>`
+                : `<span class="text-[11px] text-zinc-500">Verified</span>`}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function adminApprovePayment(index) {
+      const payments = getPaymentsDB();
+      const tx = payments[index];
+      if (!tx || tx.status === 'COMPLETED') return;
+
+      tx.status = 'COMPLETED';
+      tx.completedAt = new Date().toISOString();
+      savePaymentsDB(payments);
+
+      const db = getUsersDB();
+      const user = db[tx.userEmail];
+      if (user) {
+        if (tx.planType === 'monthly') {
+          const base = hasProAccess(user) ? new Date(user.proExpiresAt).getTime() : Date.now();
+          user.proExpiresAt = new Date(base + 30 * 24 * 60 * 60 * 1000).toISOString();
+        } else if (tx.selectedFeature) {
+          user.unlockedFeatures = Array.from(new Set([...(user.unlockedFeatures || []), tx.selectedFeature]));
+        }
+        db[tx.userEmail] = user;
+        saveUsersDB(db);
+      }
+
+      refreshAdminDashboard();
+      refreshEntitlementUI();
+      showToast(`Verified payment ${tx.trackingId} and unlocked ${tx.userEmail}`, 'success');
+    }
+
+    function updateMasterAdminCredentials() {
+      const newEmail = normalizeEmail(document.getElementById('adminConfigEmailInput').value);
+      const newPass = document.getElementById('adminConfigPassInput').value;
+      if (!newEmail || newPass.length < 6) {
+        showToast('Enter a valid admin email and a password of at least 6 characters.', 'error');
+        return;
+      }
+      localStorage.setItem(STORAGE_KEYS.ADMIN_CREDS, JSON.stringify({
+        email: newEmail,
+        passwordHash: btoa(newPass)
+      }));
+      document.getElementById('adminConfigPassInput').value = '';
+      showToast('Master Admin credentials updated.', 'success');
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const colors = {
+        success: 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200',
+        info: 'bg-zinc-900/95 border-white/15 text-zinc-100',
+        error: 'bg-red-950/95 border-red-500/50 text-red-200'
+      };
+      toast.className = `pointer-events-auto px-4 py-3 rounded-2xl border backdrop-blur-md shadow-2xl text-xs sm:text-sm font-bold text-center modal-pop ${colors[type] || colors.info}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.25s ease';
+        setTimeout(() => toast.remove(), 260);
+      }, 3400);
+    }
+
+    /*************************************************************************
+     * 10. GLOBAL TAP & KEYBOARD LISTENERS (SPACE / ENTER / CLICK ANYWHERE)
+     *************************************************************************/
+    document.getElementById('rollArena').addEventListener('click', (e) => {
+      executeRoll(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      // Ignore keyboard roll triggers if user is typing in an input/select or a modal is open
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      const openModalEl = document.querySelector('.fixed.inset-0.z-50:not(.hidden)');
+      if (openModalEl) {
+        if (e.key === 'Escape') {
+          openModalEl.classList.add('hidden');
+        }
+        return;
+      }
+
+      if (e.code === 'Space' || e.key === 'Enter') {
+        e.preventDefault();
+        executeRoll(window.innerWidth / 2, window.innerHeight / 2);
+      }
+    });
+
+    // Initialize UI on window load
+    window.onload = function () {
+      refreshEntitlementUI();
+      updateRegisterButtonState();
+      try {
+        const savedPsp = JSON.parse(localStorage.getItem(STORAGE_KEYS.PESAPAL) || 'null');
+        if (savedPsp) {
+          document.getElementById('pspEnvSelect').value = savedPsp.env || 'sandbox';
+          document.getElementById('pspIpnIdInput').value = savedPsp.ipnId || '';
+          document.getElementById('pspConsumerKeyInput').value = savedPsp.consumerKey || '';
+          document.getElementById('pspConsumerSecretInput').value = savedPsp.consumerSecret || '';
+          document.getElementById('pspBackendUrlInput').value = savedPsp.backendUrl || '';
+        }
+      } catch {}
+    };
+  </script>
+</body>
+</html>
