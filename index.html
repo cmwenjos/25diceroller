@@ -291,10 +291,6 @@
       <button onclick="openLegalModal('privacy')" class="hover:text-zinc-200 transition">Privacy</button>
       <button onclick="openLegalModal('refund')" class="hover:text-zinc-200 transition">Refund Policy</button>
       <button onclick="openLegalModal('contact')" class="hover:text-zinc-200 transition">Contact</button>
-      <button onclick="openAdminLoginModal()" title="Master Admin Portal" class="text-zinc-600 hover:text-zinc-300 transition flex items-center gap-1">
-        <span>🔒</span>
-        <span class="hidden md:inline">Admin</span>
-      </button>
     </div>
   </footer>
 
@@ -1033,7 +1029,7 @@
 
     const DEFAULT_ADMIN = {
       email: 'admin@diceroller.co.ke',
-      passwordHash: btoa('dicemaster@2026')
+      passwordHash: btoa('DiceMaster@2026')
     };
 
     const FEATURE_LABELS = {
@@ -1271,80 +1267,19 @@
         return;
       }
 
-      const db = getUsersDB();
-
-      if (mode === 'register') {
-        const agreed = document.getElementById('authTermsCheckbox').checked;
-        if (!agreed) {
-          errorBox.textContent = 'You must tick the checkbox agreeing to the Terms of Service, Privacy Policy, and Refund Policy before registering.';
-          errorBox.classList.remove('hidden');
+      // Check if Master Admin credentials were entered in the standard Sign In form
+      if (mode === 'login') {
+        const adminCreds = getAdminCreds();
+        if (email === normalizeEmail(adminCreds.email) && btoa(password) === adminCreds.passwordHash) {
+          localStorage.setItem(STORAGE_KEYS.ADMIN_SESSION, 'true');
+          closeModal('authModal');
+          refreshEntitlementUI();
+          openAdminConsole();
+          showToast('Master Admin authenticated. Full backend access unlocked.', 'success');
           return;
         }
-
-        // Enforce strict 1 email = 1 account uniqueness
-        if (db[email]) {
-          errorBox.textContent = 'This email is already registered and cannot be duplicated. Please switch to "Sign In".';
-          errorBox.classList.remove('hidden');
-          return;
-        }
-
-        const newUser = {
-          id: 'usr_' + Date.now(),
-          name: name || email.split('@')[0],
-          email,
-          passwordHash: btoa(password), // Demo encoding; backend uses bcrypt/Argon2
-          unlockedFeatures: [],
-          proExpiresAt: null,
-          agreedToTermsAt: new Date().toISOString(),
-          policyVersion: 'v1.0-2026',
-          createdAt: new Date().toISOString()
-        };
-
-        db[email] = newUser;
-        saveUsersDB(db);
-        localStorage.setItem(STORAGE_KEYS.SESSION, email);
-        showToast(`Welcome, ${newUser.name}! Your unique account is active.`, 'success');
-      } else {
-        const existingUser = db[email];
-        if (!existingUser || existingUser.passwordHash !== btoa(password)) {
-          errorBox.textContent = 'Invalid email or password. Please check your credentials.';
-          errorBox.classList.remove('hidden');
-          return;
-        }
-        localStorage.setItem(STORAGE_KEYS.SESSION, email);
-        showToast(`Signed in as ${existingUser.email}`, 'success');
       }
 
-      closeModal('authModal');
-      refreshEntitlementUI();
-
-      // If user was trying to open a locked feature, guide them straight to unlock/open it
-      if (state.intendedFeature) {
-        const target = state.intendedFeature;
-        state.intendedFeature = null;
-        if (canAccessFeature(target)) {
-          activateFeatureAfterUnlock(target);
-        } else {
-          document.getElementById('singleFeatureSelect').value = target;
-          openPricingModal();
-        }
-      }
-    }
-
-    function logoutUser() {
-      localStorage.removeItem(STORAGE_KEYS.SESSION);
-      if (state.mode !== 'classic') {
-        switchMode('classic');
-      }
-      applyDiceTheme('#ffffff', '#09090b', '#10b981', true);
-      refreshEntitlementUI();
-      closeModal('settingsModal');
-      showToast('Signed out. Classic 1–6 mode remains free to use.', 'info');
-    }
-
-    function deleteUserAccount() {
-      const user = getCurrentUser();
-      if (!user) return;
       const db = getUsersDB();
       delete db[user.email];
       saveUsersDB(db);
